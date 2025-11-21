@@ -10,138 +10,45 @@ const client = new MercadoPagoConfig({
 });
 
 class PaymentController {
-  // 💰 Criar pagamento PIX
-  async createPayment(req, res) {
-    const { planoId, nomePlano, periodo, amount, description } = req.body;
-    const usuarioId = req.user?.id;
+  // 💰 Gerar QR Code PIX
+  async generateQrCode(req, res) {
+    const { amount, description } = req.body;
 
-    if (!usuarioId || !planoId || !amount) {
+    if (!amount) {
       return res.status(400).json({
-        message: "Dados obrigatórios: usuarioId (do token), planoId, amount",
+        message: "Dados obrigatórios: amount",
       });
     }
 
-    const connection = await pool.getConnection();
-    await connection.beginTransaction();
-
     try {
-      const [userRows] = await connection.execute(
-        "SELECT email, nome FROM usuarios WHERE id = ?",
-        [usuarioId]
-      );
-
-      if (!userRows || userRows.length === 0) {
-        await connection.rollback();
-        return res.status(404).json({ message: "Usuário não encontrado" });
-      }
-
-      const { email: emailUsuario, nome: nomeUsuario } = userRows[0];
-
-      // Expira pagamentos pendentes anteriores
-      const [existingPendingPayments] = await connection.execute(
-        `SELECT pa.id, pa.assinatura_id FROM pagamentos_assinatura pa
-         JOIN assinaturas a ON pa.assinatura_id = a.id
-         WHERE a.usuario_id = ? AND a.plano_id = ? AND pa.status_pagamento = 'pendente'`,
-        [usuarioId, planoId]
-      );
-
-      for (const payment of existingPendingPayments) {
-        await connection.execute(
-          "UPDATE pagamentos_assinatura SET status_pagamento = ? WHERE id = ?",
-          ["expirado", payment.id]
-        );
-        await connection.execute(
-          "UPDATE assinaturas SET status = ? WHERE id = ?",
-          ["inativa", payment.assinatura_id]
-        );
-      }
-
-      const assinaturaId = uuidv4();
-      await connection.execute(
-        "INSERT INTO assinaturas (id, usuario_id, plano_id, status) VALUES (?, ?, ?, ?)",
-        [assinaturaId, usuarioId, planoId, "pendente"]
-      );
-
-      const pagamentoId = uuidv4();
-      const expirationTime = new Date(Date.now() + 10 * 60 * 1000);
-      await connection.execute(
-        "INSERT INTO pagamentos_assinatura (id, assinatura_id, valor, metodo_pagamento, status_pagamento, data_expiracao) VALUES (?, ?, ?, ?, ?, ?)",
-        [pagamentoId, assinaturaId, amount, "pix", "pendente", expirationTime]
-      );
-
       const payment = new Payment(client);
       const paymentData = {
         body: {
           transaction_amount: amount,
-          description: description || `Plano ${nomePlano} - ${periodo}`,
+          description: description || `Pagamento`,
           payment_method_id: "pix",
           payer: {
-            email: emailUsuario,
-            first_name: nomeUsuario.split(" ")[0],
-            last_name:
-              nomeUsuario.split(" ").slice(1).join(" ") ||
-              nomeUsuario.split(" ")[0],
+            email: "test@test.com",
           },
-          external_reference: pagamentoId,
         },
       };
 
-      const baseUrl = process.env.BASE_URL?.trim();
-      if (
-        baseUrl &&
-        !baseUrl.includes("localhost") &&
-        !baseUrl.includes("127.0.0.1")
-      ) {
-        paymentData.body.notification_url = `${baseUrl}/api/payments/webhook`;
-      }
-
       const paymentResponse = await payment.create(paymentData);
-
-      await connection.execute(
-        "UPDATE pagamentos_assinatura SET transaction_id = ?, qr_code = ?, qr_code_text = ?, init_point = ? WHERE id = ?",
-        [
-          paymentResponse.id,
-          paymentResponse.point_of_interaction?.transaction_data
-            ?.qr_code_base64 || null,
-          paymentResponse.point_of_interaction?.transaction_data?.qr_code ||
-            null,
-          paymentResponse.point_of_interaction?.transaction_data?.ticket_url ||
-            null,
-          pagamentoId,
-        ]
-      );
-
-      await connection.commit();
 
       const qrCodeBase64 =
         paymentResponse.point_of_interaction?.transaction_data
           ?.qr_code_base64 || "";
-      const qrCode =
-        paymentResponse.point_of_interaction?.transaction_data?.qr_code || "";
-      const ticketUrl =
-        paymentResponse.point_of_interaction?.transaction_data?.ticket_url || "";
 
       return res.status(200).json({
-        paymentId: pagamentoId,
-        mercadoPagoId: paymentResponse.id,
-        status: paymentResponse.status,
-        qrCode: qrCodeBase64,
-        qrCodeText: qrCode,
-        ticketUrl,
-        initPoint: ticketUrl,
-        dataExpiracao: expirationTime.toISOString(),
-        usuarioId,
+        qrCodeImage: `data:image/png;base64,${qrCodeBase64}`,
       });
     } catch (error) {
-      await connection.rollback();
-      console.error("Erro ao criar pagamento PIX:", error);
+      console.error("Erro ao gerar QR Code PIX:", error);
       return res.status(500).json({
-        message: "Erro ao criar pagamento",
+        message: "Erro ao gerar QR Code",
         error: error.message,
         details: error.response?.data || error,
       });
-    } finally {
-      connection.release();
     }
   }
 
@@ -378,6 +285,116 @@ class PaymentController {
       return res
         .status(500)
         .json({ message: "Erro ao expirar pagamento", error });
+    } finally {
+      connection.release();
+    }
+  }
+
+  // 🚀 Iniciar pagamento (criar assinatura e pagamento)
+  async initiatePayment(req, res) {
+    const { planId, periodo } = req.body;
+    const usuarioId = req.user.id; // From auth middleware
+
+    if (!planId || !periodo) {
+      return res.status(400).json({
+        message: "Dados obrigatórios: planId e periodo",
+      });
+    }
+
+    const connection = await pool.getConnection();
+    await connection.beginTransaction();
+
+    try {
+      // Get plan details
+      const [planRows] = await connection.execute(
+        "SELECT * FROM planos WHERE id = ?",
+        [planId]
+      );
+
+      if (planRows.length === 0) {
+        await connection.rollback();
+        return res.status(404).json({ message: "Plano não encontrado" });
+      }
+
+      const plano = planRows[0];
+
+      // Create subscription
+      const assinaturaId = uuidv4();
+      await connection.execute(
+        "INSERT INTO assinaturas (id, usuario_id, plano_id, status) VALUES (?, ?, ?, ?)",
+        [assinaturaId, usuarioId, planId, "pendente"]
+      );
+
+      // Create payment record
+      const paymentId = uuidv4();
+      const expirationTime = new Date(Date.now() + 30 * 60 * 1000); // 30 minutes
+
+      // Generate QR code using Mercado Pago
+      const paymentClient = new Payment(client);
+      const paymentData = {
+        body: {
+          transaction_amount: parseFloat(plano.preco),
+          description: `Assinatura ${plano.nome} - ${periodo}`,
+          payment_method_id: "pix",
+          payer: {
+            email: req.user.email,
+          },
+          external_reference: paymentId,
+        },
+      };
+
+      const paymentResponse = await paymentClient.create(paymentData);
+
+      const qrCodeBase64 =
+        paymentResponse.point_of_interaction?.transaction_data?.qr_code_base64 || "";
+      const qrCodeText =
+        paymentResponse.point_of_interaction?.transaction_data?.qr_code || "";
+
+      await connection.execute(
+        `INSERT INTO pagamentos_assinatura (
+          id, assinatura_id, valor, metodo_pagamento, status_pagamento,
+          data_expiracao, qr_code, qr_code_text, init_point
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          paymentId,
+          assinaturaId,
+          plano.preco,
+          "pix",
+          "pendente",
+          expirationTime,
+          qrCodeBase64,
+          qrCodeText,
+          paymentResponse.init_point || null,
+        ]
+      );
+
+      await connection.commit();
+
+      return res.status(200).json({
+        paymentId,
+        qrCode: `data:image/png;base64,${qrCodeBase64}`,
+        pixCode: qrCodeText,
+        expirationTime,
+        dataCriacao: new Date().toISOString(),
+        plan: {
+          nome: plano.nome,
+          periodo: plano.periodo,
+          preco: parseFloat(plano.preco),
+          duracaoDias: plano.duracao_dias,
+          beneficios: JSON.parse(plano.beneficios),
+        },
+        user: {
+          nome: req.user.nome,
+          email: req.user.email,
+        },
+      });
+    } catch (error) {
+      await connection.rollback();
+      console.error("Erro ao iniciar pagamento:", error);
+      return res.status(500).json({
+        message: "Erro ao iniciar pagamento",
+        error: error.message,
+      });
     } finally {
       connection.release();
     }

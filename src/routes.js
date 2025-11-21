@@ -73,7 +73,8 @@ routes.get('/api/usuarios/:id', AuthController.getUserDetails);
 routes.get('/api/auth/user-details', authMiddleware, AuthController.getCurrentUserDetails);
 
 // 🔹 Pagamentos
-routes.post('/api/payments/create', authMiddleware, PaymentController.createPayment);
+routes.post('/api/payments/initiate', authMiddleware, PaymentController.initiatePayment);
+routes.post('/api/payments/qr-code', authMiddleware, PaymentController.generateQrCode);
 routes.post('/api/payments/webhook', PaymentController.handleWebhook);
 routes.get('/api/payments/status/:id', PaymentController.getPaymentStatus);
 routes.get('/api/payments/:id', PaymentController.getPaymentDetails);
