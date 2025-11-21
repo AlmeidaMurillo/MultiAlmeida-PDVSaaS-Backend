@@ -24,7 +24,7 @@ class PaymentController {
       const payment = new Payment(client);
       const paymentData = {
         body: {
-          transaction_amount: amount,
+          transaction_amount: Number(amount),
           description: description || `Pagamento`,
           payment_method_id: "pix",
           payer: {
@@ -52,7 +52,7 @@ class PaymentController {
     }
   }
 
-  // 🔔 Webhook de retorno do Mercado Pago
+  // 🔔 Webhook de retorno do MP
   async handleWebhook(req, res) {
     console.log("Webhook recebido. Query:", req.query, "Body:", req.body);
 
@@ -60,11 +60,9 @@ class PaymentController {
     let notificationType;
 
     if (req.body && req.body.action && req.body.action.startsWith("payment.")) {
-      console.log("Processando notificação via Webhook (body).");
       paymentId = req.body.data?.id;
       notificationType = req.body.type;
     } else if (req.query && req.query["data.id"]) {
-      console.log("Processando notificação via IPN (query string).");
       notificationType = req.query.type;
       if (notificationType === "payment") {
         paymentId = req.query["data.id"];
@@ -72,8 +70,7 @@ class PaymentController {
     }
 
     if (notificationType !== "payment" || !paymentId) {
-      console.log("Notificação inválida ou sem ID. Ignorando.");
-      return res.status(200).send("Event is not a valid payment notification.");
+      return res.status(200).send("Evento ignorado.");
     }
 
     const connection = await pool.getConnection();
@@ -85,7 +82,6 @@ class PaymentController {
 
       if (!payment || !payment.external_reference) {
         await connection.rollback();
-        console.warn("Pagamento não encontrado no MP ou sem referência.");
         return res
           .status(404)
           .send("Pagamento não encontrado ou sem referência externa.");
@@ -108,9 +104,7 @@ class PaymentController {
 
       if (updateResult.affectedRows === 0) {
         await connection.rollback();
-        return res
-          .status(404)
-          .send("Registro de pagamento interno não encontrado.");
+        return res.status(404).send("Registro interno não encontrado.");
       }
 
       const [pagamentoRows] = await connection.execute(
@@ -118,7 +112,7 @@ class PaymentController {
         [nossoPagamentoId]
       );
 
-      if (!pagamentoRows || pagamentoRows.length === 0) {
+      if (!pagamentoRows.length) {
         await connection.rollback();
         return res
           .status(404)
@@ -133,7 +127,7 @@ class PaymentController {
           [plano_id]
         );
 
-        if (!planoRows || planoRows.length === 0) {
+        if (!planoRows.length) {
           await connection.rollback();
           return res.status(404).send("Plano não encontrado.");
         }
@@ -160,7 +154,7 @@ class PaymentController {
       return res.status(200).send("Webhook processado com sucesso.");
     } catch (error) {
       await connection.rollback();
-      console.error("Erro ao processar webhook:", error);
+      console.error("Erro no webhook:", error);
       return res
         .status(500)
         .json({ message: "Erro ao processar webhook", error: error.message });
@@ -169,7 +163,7 @@ class PaymentController {
     }
   }
 
-  // 🔎 Buscar status de pagamento
+  // 🔎 Buscar status do pagamento
   async getPaymentStatus(req, res) {
     try {
       const { id } = req.params;
@@ -179,8 +173,7 @@ class PaymentController {
       );
 
       if (Array.isArray(pagamento) && pagamento.length > 0) {
-        const status = pagamento[0].status;
-        return res.status(200).json({ status });
+        return res.status(200).json({ status: pagamento[0].status });
       } else {
         return res.status(404).json({ message: "Pagamento não encontrado" });
       }
@@ -191,7 +184,7 @@ class PaymentController {
     }
   }
 
-  // 📋 Buscar detalhes do pagamento
+  // 📋 Detalhes do pagamento
   async getPaymentDetails(req, res) {
     try {
       const { id } = req.params;
@@ -201,7 +194,6 @@ class PaymentController {
             pa.status_pagamento as status, 
             pa.qr_code as qrCode, 
             pa.qr_code_text as qrCodeText, 
-            pa.init_point as initPoint, 
             pa.data_expiracao as expirationTime,
             a.usuario_id as usuarioId,
             a.plano_id as planId,
@@ -216,72 +208,71 @@ class PaymentController {
         [id]
       );
 
-      if (pagamento.length > 0) {
-        const paymentData = pagamento[0];
-        if (
-          paymentData.expirationTime &&
-          new Date() > new Date(paymentData.expirationTime) &&
-          paymentData.status === "pendente"
-        ) {
-          await pool.execute(
-            "UPDATE pagamentos_assinatura SET status_pagamento = ? WHERE id = ?",
-            ["expirado", id]
-          );
-          paymentData.status = "expirado";
-        }
-
-        return res.status(200).json(paymentData);
-      } else {
+      if (!pagamento.length) {
         return res.status(404).json({ message: "Pagamento não encontrado" });
       }
+
+      const data = pagamento[0];
+
+      if (
+        data.expirationTime &&
+        new Date() > new Date(data.expirationTime) &&
+        data.status === "pendente"
+      ) {
+        await pool.execute(
+          "UPDATE pagamentos_assinatura SET status_pagamento = ? WHERE id = ?",
+          ["expirado", id]
+        );
+        data.status = "expirado";
+      }
+
+      return res.status(200).json(data);
     } catch (error) {
-      console.error("Erro ao buscar detalhes do pagamento:", error);
+      console.error("Erro ao buscar detalhes:", error);
       return res
         .status(500)
-        .json({ message: "Erro ao buscar detalhes do pagamento", error });
+        .json({ message: "Erro ao buscar detalhes", error });
     }
   }
 
-  // ⏰ Expirar pagamento pendente manualmente
+  // ⏰ Expirar pagamento manualmente
   async expirePayment(req, res) {
     const { id } = req.params;
     const connection = await pool.getConnection();
     await connection.beginTransaction();
 
     try {
-      const [pagamentoRows] = await connection.execute(
-        "SELECT assinatura_id FROM pagamentos_assinatura WHERE id = ? AND status_pagamento = ?",
-        [id, "pendente"]
+      const [rows] = await connection.execute(
+        "SELECT assinatura_id FROM pagamentos_assinatura WHERE id = ? AND status_pagamento = 'pendente'",
+        [id]
       );
 
-      if (pagamentoRows.length === 0) {
+      if (!rows.length) {
         await connection.rollback();
         return res.status(404).json({
           message: "Pagamento pendente não encontrado ou já processado.",
         });
       }
 
-      const { assinatura_id } = pagamentoRows[0];
+      const { assinatura_id } = rows[0];
 
-      const [updatePagamentoResult] = await connection.execute(
-        "UPDATE pagamentos_assinatura SET status_pagamento = ? WHERE id = ? AND status_pagamento = ?",
-        ["expirado", id, "pendente"]
+      await connection.execute(
+        "UPDATE pagamentos_assinatura SET status_pagamento = 'expirado' WHERE id = ?",
+        [id]
       );
 
-      if (updatePagamentoResult.affectedRows > 0) {
-        await connection.execute(
-          "UPDATE assinaturas SET status = ? WHERE id = ? AND status = ?",
-          ["inativa", assinatura_id, "pendente"]
-        );
-      }
+      await connection.execute(
+        "UPDATE assinaturas SET status = 'inativa' WHERE id = ? AND status = 'pendente'",
+        [assinatura_id]
+      );
 
       await connection.commit();
       return res.status(200).json({
-        message: "Pagamento expirado e assinatura inativada com sucesso",
+        message: "Pagamento expirado com sucesso",
       });
     } catch (error) {
       await connection.rollback();
-      console.error("Erro ao expirar pagamento:", error);
+      console.error("Erro ao expirar:", error);
       return res
         .status(500)
         .json({ message: "Erro ao expirar pagamento", error });
@@ -290,10 +281,10 @@ class PaymentController {
     }
   }
 
-  // 🚀 Iniciar pagamento (criar assinatura e pagamento)
+  // 🚀 Iniciar pagamento PIX (corrigido)
   async initiatePayment(req, res) {
     const { planId, periodo } = req.body;
-    const usuarioId = req.user.id; // From auth middleware
+    const usuarioId = req.user.id;
 
     if (!planId || !periodo) {
       return res.status(400).json({
@@ -305,7 +296,6 @@ class PaymentController {
     await connection.beginTransaction();
 
     try {
-      // Get plan details
       const [planRows] = await connection.execute(
         "SELECT * FROM planos WHERE id = ?",
         [planId]
@@ -318,22 +308,23 @@ class PaymentController {
 
       const plano = planRows[0];
 
-      // Create subscription
+      // Corrigir preço (vírgula para ponto)
+      const preco = Number(plano.preco.toString().replace(",", "."));
+
       const assinaturaId = uuidv4();
       await connection.execute(
-        "INSERT INTO assinaturas (id, usuario_id, plano_id, status) VALUES (?, ?, ?, ?)",
-        [assinaturaId, usuarioId, planId, "pendente"]
+        "INSERT INTO assinaturas (id, usuario_id, plano_id, status) VALUES (?, ?, ?, 'pendente')",
+        [assinaturaId, usuarioId, planId]
       );
 
-      // Create payment record
       const paymentId = uuidv4();
-      const expirationTime = new Date(Date.now() + 30 * 60 * 1000); // 30 minutes
+      const expirationTime = new Date(Date.now() + 30 * 60 * 1000);
 
-      // Generate QR code using Mercado Pago
       const paymentClient = new Payment(client);
+
       const paymentData = {
         body: {
-          transaction_amount: parseFloat(plano.preco),
+          transaction_amount: preco,
           description: `Assinatura ${plano.nome} - ${periodo}`,
           payment_method_id: "pix",
           payer: {
@@ -343,28 +334,27 @@ class PaymentController {
         },
       };
 
-      const paymentResponse = await paymentClient.create(paymentData);
+      const response = await paymentClient.create(paymentData);
 
       const qrCodeBase64 =
-        paymentResponse.point_of_interaction?.transaction_data?.qr_code_base64 || "";
+        response.point_of_interaction?.transaction_data?.qr_code_base64 || "";
       const qrCodeText =
-        paymentResponse.point_of_interaction?.transaction_data?.qr_code || "";
+        response.point_of_interaction?.transaction_data?.qr_code || "";
 
       await connection.execute(
         `INSERT INTO pagamentos_assinatura (
           id, assinatura_id, valor, metodo_pagamento, status_pagamento,
-          data_expiracao, qr_code, qr_code_text, init_point
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          data_expiracao, qr_code, qr_code_text
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           paymentId,
           assinaturaId,
-          plano.preco,
+          preco,
           "pix",
           "pendente",
           expirationTime,
           qrCodeBase64,
           qrCodeText,
-          paymentResponse.init_point || null,
         ]
       );
 
@@ -375,11 +365,10 @@ class PaymentController {
         qrCode: `data:image/png;base64,${qrCodeBase64}`,
         pixCode: qrCodeText,
         expirationTime,
-        dataCriacao: new Date().toISOString(),
         plan: {
           nome: plano.nome,
           periodo: plano.periodo,
-          preco: parseFloat(plano.preco),
+          preco,
           duracaoDias: plano.duracao_dias,
           beneficios: JSON.parse(plano.beneficios),
         },
