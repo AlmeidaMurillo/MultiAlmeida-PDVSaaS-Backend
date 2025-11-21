@@ -370,7 +370,7 @@ class PaymentController {
           periodo: plano.periodo,
           preco,
           duracaoDias: plano.duracao_dias,
-          beneficios: JSON.parse(plano.beneficios),
+          beneficios: plano.beneficios,
         },
         user: {
           nome: req.user.nome,
