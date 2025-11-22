@@ -134,9 +134,17 @@ class AuthController {
 
       const isSubscriptionActive = assinaturaRows.length > 0;
 
+      // Adiciona verificação para qualquer assinatura existente, independente do status
+      const [anySubscriptionRows] = await pool.execute(
+        'SELECT COUNT(*) AS total FROM assinaturas WHERE usuario_id = ?',
+        [userId]
+      );
+
+      const hasAnySubscription = anySubscriptionRows[0].total > 0;
+
       return res
         .status(200)
-        .json({ isAuthenticated: true, isSubscriptionActive });
+        .json({ isAuthenticated: true, isSubscriptionActive, hasAnySubscription });
     } catch (error) {
       console.error("Erro ao verificar status da autenticação:", error);
       return res.status(500).json({ error: "Erro interno do servidor" });
