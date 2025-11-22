@@ -140,6 +140,18 @@ class PaymentController {
            WHERE id = ?`,
           [duracao_dias, assinatura_id]
         );
+
+        // Limpar o carrinho do usuário
+        const [assinaturaRows] = await connection.execute(
+          "SELECT usuario_id FROM assinaturas WHERE id = ?",
+          [assinatura_id]
+        );
+        
+        if (assinaturaRows.length > 0) {
+          const usuarioId = assinaturaRows[0].usuario_id;
+          await connection.execute("DELETE FROM carrinho_usuarios WHERE usuario_id = ?", [usuarioId]);
+        }
+
       } else if (
         novoStatusPagamento === "reprovado" ||
         novoStatusPagamento === "cancelado"
@@ -283,19 +295,24 @@ class PaymentController {
 
   // 🚀 Iniciar pagamento PIX (corrigido)
   async initiatePayment(req, res) {
-    const { planId, periodo } = req.body;
     const usuarioId = req.user.id;
-
-    if (!planId || !periodo) {
-      return res.status(400).json({
-        message: "Dados obrigatórios: planId e periodo",
-      });
-    }
-
     const connection = await pool.getConnection();
     await connection.beginTransaction();
 
     try {
+      // Buscar item do carrinho
+      const [cartItems] = await connection.execute(
+        "SELECT plano_id, periodo FROM carrinho_usuarios WHERE usuario_id = ?",
+        [usuarioId]
+      );
+
+      if (cartItems.length === 0) {
+        await connection.rollback();
+        return res.status(404).json({ message: "Carrinho vazio" });
+      }
+
+      const { plano_id: planId, periodo } = cartItems[0];
+
       const [planRows] = await connection.execute(
         "SELECT * FROM planos WHERE id = ?",
         [planId]
