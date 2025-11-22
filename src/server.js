@@ -6,8 +6,6 @@ import { v4 as uuidv4 } from 'uuid';
 
 const port = process.env.PORT || 5000;
 
-import { v4 as uuidv4 } from 'uuid';
-
 // Função para criar um admin padrão se não existir
 async function createDefaultAdmin() {
   const adminEmail = 'admin@gmail.com';
