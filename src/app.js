@@ -12,13 +12,27 @@ app.set('trust proxy', 1);
 
 app.use(helmet({ crossOriginResourcePolicy: { policy: 'same-site' } }));
 
-const allowedOrigin = process.env.FRONTEND_URL || 'http://localhost:5173';
+const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+const allowedOrigins = frontendUrl.split(',').map(url => url.trim());
+
+// Adiciona o localhost padrão se não estiver na lista, para desenvolvimento
+if (!allowedOrigins.includes('http://localhost:5173')) {
+  allowedOrigins.push('http://localhost:5173');
+}
+
 app.use(
   cors({
     origin: (origin, callback) => {
+      // Permite requisições sem origin (como Postman ou apps mobile)
       if (!origin) return callback(null, true);
-      if (origin === allowedOrigin) return callback(null, true);
-      return callback(new Error('Origin não permitido'));
+
+      // Verifica se a origin da requisição está na lista de permitidas
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+
+      // Se a origin não for permitida, retorna um erro
+      return callback(new Error('Origin não permitido pelas políticas de CORS'));
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],

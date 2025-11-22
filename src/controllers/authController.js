@@ -89,7 +89,7 @@ class AuthController {
 
       return res.json({ user: usuarioSemSenha, tipo: "usuario", token });
     } catch (error) {
-      console.error("Erro no login:", error);
+      console.error("Erro detalhado no login:", error.stack || error);
       return res.status(500).json({ error: "Erro interno do servidor" });
     }
   }
