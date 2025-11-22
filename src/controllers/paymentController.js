@@ -348,6 +348,7 @@ class PaymentController {
             email: req.user.email,
           },
           external_reference: paymentId,
+          notification_url: `${process.env.BACKEND_URL}/api/payments/webhook`,
         },
       };
 
