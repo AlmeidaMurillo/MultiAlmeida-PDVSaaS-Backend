@@ -1,15 +1,16 @@
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
-import dotenv from "dotenv";
 import { validationResult } from "express-validator";
 import pool from "../db.js";
 
-dotenv.config();
+// We don't need dotenv.config() here anymore, 
+// it's handled in app.js and/or middlewares/auth.js
 
 // 🔐 Configuração do JWT
-const JWT_SECRET = process.env.JWT_SECRET || "";
+const JWT_SECRET = process.env.JWT_SECRET;
 const JWT_EXPIRES = process.env.JWT_EXPIRES_IN || "8h";
 
+// This check ensures the app fails fast if the secret is not set.
 if (!JWT_SECRET) {
   throw new Error("JWT_SECRET não definido nas variáveis de ambiente");
 }
@@ -204,15 +205,23 @@ class AuthController {
       const userId = req.user?.id;
 
       if (!userId) {
-        return res.status(401).json({ message: "Usuário não autenticado" });
+        console.error("getCurrentUserDetails: ID do usuário não encontrado na requisição");
+        return res.status(401).json({ message: "Usuário não autenticado - ID faltando" });
       }
 
-      const [userRows] = await pool.execute(
-        "SELECT id, nome, email FROM usuarios WHERE id = ?",
-        [userId]
-      );
+      let userRows;
+      try {
+        [userRows] = await pool.execute(
+          "SELECT id, nome, email FROM usuarios WHERE id = ?",
+          [userId]
+        );
+      } catch (dbError) {
+        console.error("Erro ao executar consulta no banco de dados:", dbError);
+        return res.status(500).json({ error: "Erro ao consultar os detalhes do usuário" });
+      }
 
-      if (userRows.length === 0) {
+      if (!userRows || userRows.length === 0) {
+        console.warn(`getCurrentUserDetails: Usuário com ID ${userId} não encontrado`);
         return res.status(404).json({ message: "Usuário não encontrado" });
       }
 
@@ -224,8 +233,8 @@ class AuthController {
         email: usuario.email,
       });
     } catch (error) {
-      console.error("Erro ao buscar detalhes do usuário atual:", error);
-      return res.status(500).json({ error: "Erro interno do servidor" });
+      console.error("Erro inesperado ao buscar detalhes do usuário atual:", error);
+      return res.status(500).json({ error: "Erro inesperado no servidor" });
     }
   }
 }

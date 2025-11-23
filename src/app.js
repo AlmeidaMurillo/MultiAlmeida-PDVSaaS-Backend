@@ -1,3 +1,6 @@
+import dotenv from 'dotenv';
+dotenv.config();
+
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
@@ -51,7 +54,7 @@ const limiter = rateLimit({
   legacyHeaders: false,
 });
 
-app.use(['/api/admin/login', '/api/login', '/api/criar-conta'], limiter);
+app.use(['/api/login', '/api/criar-conta'], limiter);
 
 const cache = apicache.middleware;
 app.use('/api/planos', cache('60 seconds'));

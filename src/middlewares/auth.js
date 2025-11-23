@@ -1,4 +1,7 @@
 import jwt from "jsonwebtoken";
+import dotenv from 'dotenv';
+
+dotenv.config();
 
 const JWT_SECRET = process.env.JWT_SECRET;
 if (!JWT_SECRET) {
@@ -15,24 +18,30 @@ export function authMiddleware(req, res, next) {
     req.headers.authorization.startsWith("Bearer ")
   ) {
     token = req.headers.authorization.split(" ")[1];
+    console.log("Token encontrado no header Authorization:", token);
   }
   // 2. Se não estiver no cabeçalho, tenta pegar do cookie (fallback)
   else if (req.cookies.jwt_token) {
     token = req.cookies.jwt_token;
+    console.log("Token encontrado no cookie jwt_token:", token);
   }
 
   if (!token) {
+    console.log("Token não fornecido na requisição");
     return res.status(401).json({ error: "Token não fornecido" });
   }
 
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
     req.user = decoded;
+    console.log("Token verificado com sucesso. Payload:", decoded);
     return next();
   } catch (err) {
     if (err.name === "TokenExpiredError") {
+      console.log("Token expirado:", err.message);
       return res.status(401).json({ error: "Token expirado" });
     }
+    console.log("Token inválido:", err.message);
     return res.status(401).json({ error: "Token inválido" });
   }
 }
@@ -40,9 +49,11 @@ export function authMiddleware(req, res, next) {
 // Middleware que exige ser admin
 export function requireAdmin(req, res, next) {
   if (!req.user) {
+    console.log("RequireAdmin: Usuário não autenticado");
     return res.status(401).json({ error: "Usuário não autenticado" });
   }
   if (req.user.papel !== "admin") {
+    console.log("RequireAdmin: Acesso negado para papel", req.user.papel);
     return res.status(403).json({ error: "Acesso negado" });
   }
   return next();
