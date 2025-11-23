@@ -203,18 +203,26 @@ class AuthController {
   async getCurrentUserDetails(req, res) {
     try {
       const userId = req.user?.id;
+      const papel = req.user?.papel;
 
       if (!userId) {
         console.error("getCurrentUserDetails: ID do usuário não encontrado na requisição");
         return res.status(401).json({ message: "Usuário não autenticado - ID faltando" });
       }
 
+      let query = "";
+      if (papel === "admin") {
+        query = "SELECT id, nome, email FROM admins WHERE id = ?";
+      } else if (papel === "usuario") {
+        query = "SELECT id, nome, email FROM usuarios WHERE id = ?";
+      } else {
+        console.warn(`getCurrentUserDetails: Papel de usuário inválido: ${papel}`);
+        return res.status(400).json({ message: "Tipo de usuário inválido" });
+      }
+
       let userRows;
       try {
-        [userRows] = await pool.execute(
-          "SELECT id, nome, email FROM usuarios WHERE id = ?",
-          [userId]
-        );
+        [userRows] = await pool.execute(query, [userId]);
       } catch (dbError) {
         console.error("Erro ao executar consulta no banco de dados:", dbError);
         return res.status(500).json({ error: "Erro ao consultar os detalhes do usuário" });
