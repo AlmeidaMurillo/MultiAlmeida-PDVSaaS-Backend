@@ -4,6 +4,7 @@ import { v4 as uuidv4 } from "uuid";
 import pool from "../db.js";
 import jwt from "jsonwebtoken";
 import dotenv from "dotenv";
+import crypto from "crypto";
 
 dotenv.config();
 
@@ -43,23 +44,41 @@ class ContasController {
       // Criar usuário
       const usuarioId = uuidv4();
       const senhaHash = await bcrypt.hash(senha, 10);
+      const papel = "usuario";
 
       await pool.execute(
-        "INSERT INTO usuarios (id, nome, email, senha) VALUES (?, ?, ?, ?)",
-        [usuarioId, nome, email, senhaHash]
+        "INSERT INTO usuarios (id, nome, email, senha, papel) VALUES (?, ?, ?, ?, ?)",
+        [usuarioId, nome, email, senhaHash, papel]
       );
 
       // Gerar token JWT para o novo usuário
       const token = jwt.sign(
-        { id: usuarioId, email: email, papel: "usuario" },
+        { id: usuarioId, email: email, papel: papel },
         JWT_SECRET,
         { expiresIn: JWT_EXPIRES }
       );
+      
+      // Salva a sessão na tabela sessoes_usuarios
+      await pool.execute(
+        "INSERT INTO sessoes_usuarios (id, usuario_id, hash_token, expira_em, info_dispositivo, info_navegador, endereco_ip, papel) VALUES (?, ?, ?, DATE_ADD(NOW(), INTERVAL ? SECOND), ?, ?, ?, ?)",
+        [
+          uuidv4(),
+          usuarioId,
+          crypto.createHash("sha256").update(token).digest("hex"),
+          parseInt(process.env.JWT_EXPIRES_IN_SECONDS) || 28800,
+          req.headers["user-agent"] || "unknown",
+          req.headers["user-agent"] || "unknown",
+          req.ip,
+          papel,
+        ]
+      );
+      
+      const user = { id: usuarioId, nome, email };
 
       return res.status(201).json({
         message: "Conta criada com sucesso",
-        usuarioId,
-        token,
+        user,
+        papel: papel,
       });
     } catch (error) {
       console.error("Erro ao criar conta:", error);

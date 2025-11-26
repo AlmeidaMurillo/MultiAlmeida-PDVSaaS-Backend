@@ -12,15 +12,13 @@ async function createDefaultAdmin() {
   const adminPassword = 'admin123';
 
   try {
-    const [rows] = await pool.execute('SELECT * FROM admins WHERE email = ?', [adminEmail]);
+    const [rows] = await pool.execute('SELECT * FROM usuarios WHERE email = ?', [adminEmail]);
 
     if (rows.length === 0) {
       const adminId = uuidv4();
       const hashedPassword = await bcrypt.hash(adminPassword, 10);
-      await pool.execute('INSERT INTO admins (id, nome, email, senha) VALUES (?, ?, ?, ?)', [adminId, 'Admin Padrão', adminEmail, hashedPassword]);
-      console.log(`✅ Admin padrão criado com o email: ${adminEmail}`);
+      await pool.execute('INSERT INTO usuarios (id, nome, email, senha, papel) VALUES (?, ?, ?, ?, ?)', [adminId, 'Admin Padrão', adminEmail, hashedPassword, 'admin']);
     } else {
-      console.log('ℹ️ Admin padrão já existe.');
     }
   } catch (error) {
     console.error('❌ Erro ao criar admin padrão:', error);

@@ -54,8 +54,6 @@ class PaymentController {
 
   // 🔔 Webhook de retorno do MP
   async handleWebhook(req, res) {
-    console.log("Webhook recebido. Query:", req.query, "Body:", req.body);
-
     let paymentId;
     let notificationType;
 
@@ -274,7 +272,7 @@ class PaymentController {
       );
 
       await connection.execute(
-        "UPDATE assinaturas SET status = 'inativa' WHERE id = ? AND status = 'pendente'",
+        "UPDATE assinaturas SET status = 'inativa' WHERE id = ? AND status = 'ativa'",
         [assinatura_id]
       );
 
@@ -335,7 +333,7 @@ class PaymentController {
       );
 
       const paymentId = uuidv4();
-      const expirationTime = new Date(Date.now() + 30 * 60 * 1000);
+      const expirationTime = new Date(Date.now() + 1 * 60 * 1000);
 
       const paymentClient = new Payment(client);
 

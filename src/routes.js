@@ -1,31 +1,25 @@
 import { Router } from 'express';
 import { body } from 'express-validator';
+
 import AuthController from './controllers/authController.js';
 import ContasController from './controllers/contasController.js';
-import { authMiddleware, requireAdmin } from './middlewares/auth.js';
 import EmpresasController from './controllers/empresasController.js';
 import PaymentController from './controllers/paymentController.js';
 import PlanosController from './controllers/planosController.js';
 import CarrinhoController from './controllers/carrinhoController.js';
 
+import { authMiddleware, requireAdmin, optionalAuthMiddleware } from './middlewares/auth.js';
+
 const routes = Router();
 
-// 🔹 Login de admin
-routes.post(
-  '/api/admin/login',
-  [
-    body('email').isEmail().normalizeEmail().withMessage('Email inválido'),
-    body('senha')
-      .isLength({ min: 6 })
-      .withMessage('A senha deve ter no mínimo 6 caracteres')
-      .matches(/^(?=.*[A-Za-z])(?=.*\d)/)
-      .withMessage('A senha deve conter letras e números'),
-  ],
-  AuthController.login
-);
+
+// 🔹 Rotas para tokens - pegar e criar
+routes.get('/api/tokens', optionalAuthMiddleware, AuthController.getTokens);
+routes.post('/api/tokens', authMiddleware, AuthController.createToken);
 
 // 🔹 Logout
-routes.post('/api/logout', AuthController.logout);
+routes.post('/api/logout', authMiddleware, AuthController.logout);
+
 
 // 🔹 Criação de conta
 routes.post(

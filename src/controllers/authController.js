@@ -2,64 +2,28 @@ import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import { validationResult } from "express-validator";
 import pool from "../db.js";
+import { v4 as uuidv4 } from "uuid";
+import crypto from "crypto";
 
-// We don't need dotenv.config() here anymore, 
-// it's handled in app.js and/or middlewares/auth.js
-
-// 🔐 Configuração do JWT
 const JWT_SECRET = process.env.JWT_SECRET;
 const JWT_EXPIRES = process.env.JWT_EXPIRES_IN || "8h";
 
-// This check ensures the app fails fast if the secret is not set.
 if (!JWT_SECRET) {
   throw new Error("JWT_SECRET não definido nas variáveis de ambiente");
 }
 
 class AuthController {
-  // 🔑 Login
   async login(req, res) {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    const { email, senha } = req.body;
+
     try {
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        return res.status(400).json({ errors: errors.array() });
-      }
-
-      const { email, senha } = req.body;
-
-      // 🔎 Tenta login como admin
-      const [adminRows] = await pool.execute(
-        "SELECT * FROM admins WHERE email = ?",
-        [email]
-      );
-
-      if (adminRows.length > 0) {
-        const admin = adminRows[0];
-
-        if (await bcrypt.compare(senha, admin.senha)) {
-          const token = jwt.sign(
-            { id: admin.id, email: admin.email, papel: "admin" },
-            JWT_SECRET,
-            { expiresIn: JWT_EXPIRES }
-          );
-
-          const { senha: _, ...adminSemSenha } = admin;
-
-          res.cookie("jwt_token", token, {
-            httpOnly: true,
-            secure: process.env.NODE_ENV === "production",
-            sameSite: "lax",
-            maxAge: 8 * 60 * 60 * 1000, // 8h
-          });
-
-          return res.json({ user: adminSemSenha, tipo: "admin", token });
-        } else {
-          return res.status(401).json({ error: "Email ou senha incorretos" });
-        }
-      }
-
-      // 👤 Se não for admin, tenta login como usuário
       const [userRows] = await pool.execute(
-        "SELECT * FROM usuarios WHERE email = ?",
+        "SELECT id, nome, email, senha, papel FROM usuarios WHERE email = ?",
         [email]
       );
 
@@ -68,44 +32,76 @@ class AuthController {
       }
 
       const usuario = userRows[0];
+      const senhaCorreta = await bcrypt.compare(senha, usuario.senha);
 
-      if (!(await bcrypt.compare(senha, usuario.senha))) {
+      if (!senhaCorreta) {
         return res.status(401).json({ error: "Email ou senha incorretos" });
       }
 
+      // Se autenticado com sucesso, gera o token
       const token = jwt.sign(
-        { id: usuario.id, email: usuario.email, papel: "usuario" },
+        {
+          id: usuario.id,
+          email: usuario.email,
+          nome: usuario.nome,
+          papel: usuario.papel,
+        },
         JWT_SECRET,
         { expiresIn: JWT_EXPIRES }
       );
 
-      const { senha: _, ...usuarioSemSenha } = usuario;
+      // Salva a sessão na tabela sessoes_usuarios
+      await pool.execute(
+        "INSERT INTO sessoes_usuarios (id, usuario_id, hash_token, expira_em, info_dispositivo, info_navegador, endereco_ip, papel) VALUES (?, ?, ?, DATE_ADD(NOW(), INTERVAL ? SECOND), ?, ?, ?, ?)",
+        [
+          uuidv4(),
+          usuario.id,
+          crypto.createHash("sha256").update(token).digest("hex"),
+          parseInt(process.env.JWT_EXPIRES_IN_SECONDS) || 28800,
+          req.headers["user-agent"] || "unknown",
+          req.headers["user-agent"] || "unknown",
+          req.ip,
+          usuario.papel,
+        ]
+      );
+      
+      const jsonResponse = {
+        token: token,
+        user: { id: usuario.id, nome: usuario.nome, email: usuario.email },
+        papel: usuario.papel,
+      };
 
-      res.cookie("jwt_token", token, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
-        sameSite: "lax",
-        maxAge: 8 * 60 * 60 * 1000, // 8h
-      });
-
-      return res.json({ user: usuarioSemSenha, tipo: "usuario", token });
+      return res.json(jsonResponse);
     } catch (error) {
-      console.error("Erro detalhado no login:", error.stack || error);
+      console.error("Erro no login:", error);
       return res.status(500).json({ error: "Erro interno do servidor" });
     }
   }
 
-  // 🚪 Logout
   async logout(req, res) {
-    res.clearCookie("jwt_token", {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
-    });
-    return res.status(200).json({ message: "Logout realizado com sucesso" });
+    try {
+      const authHeader = req.headers.authorization;
+      if (!authHeader || !authHeader.startsWith("Bearer ")) {
+        return res
+          .status(401)
+          .json({ message: "Token de autorização não fornecido." });
+      }
+
+      const token = authHeader.split(" ")[1];
+      const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
+
+      await pool.execute(
+        "UPDATE sessoes_usuarios SET esta_ativo = FALSE WHERE hash_token = ?",
+        [tokenHash]
+      );
+
+      return res.status(200).json({ message: "Logout realizado com sucesso" });
+    } catch (error) {
+      console.error("Erro no logout:", error);
+      return res.status(500).json({ error: "Erro interno do servidor" });
+    }
   }
 
-  // 🔑 Verificar token
   async verificarToken(req, res) {
     if (!req.user) {
       return res
@@ -115,56 +111,82 @@ class AuthController {
     return res.json({ user: req.user });
   }
 
-  // 👥 Verificar status da autenticação e assinatura
   async checkAuthStatus(req, res) {
     try {
       const userId = req.user?.id;
+      const userPapel = req.user?.papel;
 
       if (!userId) {
         return res.status(401).json({
           isAuthenticated: false,
           isSubscriptionActive: false,
+          hasHadActiveSubscription: false,
           message: "Usuário não autenticado",
         });
       }
 
-      const [assinaturaRows] = await pool.execute(
+      if (userPapel !== "usuario") {
+        return res.status(200).json({
+          isAuthenticated: true,
+          isSubscriptionActive: false,
+          isSubscriptionExpired: false,
+          hasHadActiveSubscription: false,
+          hasAnySubscription: false,
+          papel: userPapel,
+        });
+      }
+
+      await pool.execute(
+        'UPDATE assinaturas SET status = "vencida" WHERE usuario_id = ? AND status = "ativa" AND data_vencimento <= NOW()',
+        [userId]
+      );
+
+      const [assinaturaAtivaRows] = await pool.execute(
         'SELECT status FROM assinaturas WHERE usuario_id = ? AND status = "ativa" AND data_vencimento > NOW()',
         [userId]
       );
+      const isSubscriptionActive = assinaturaAtivaRows.length > 0;
 
-      const isSubscriptionActive = assinaturaRows.length > 0;
-
-      // Adiciona verificação para qualquer assinatura existente, independente do status
-      const [anySubscriptionRows] = await pool.execute(
-        'SELECT COUNT(*) AS total FROM assinaturas WHERE usuario_id = ?',
+      const [assinaturaVencidaRows] = await pool.execute(
+        'SELECT status FROM assinaturas WHERE usuario_id = ? AND status = "vencida"',
         [userId]
       );
+      const isSubscriptionExpired = assinaturaVencidaRows.length > 0;
 
+      const [assinaturaHistoricoRows] = await pool.execute(
+        'SELECT COUNT(*) AS total FROM assinaturas WHERE usuario_id = ? AND status = "ativa"',
+        [userId]
+      );
+      const hasHadActiveSubscription = assinaturaHistoricoRows[0].total > 0;
+
+      const [anySubscriptionRows] = await pool.execute(
+        "SELECT COUNT(*) AS total FROM assinaturas WHERE usuario_id = ?",
+        [userId]
+      );
       const hasAnySubscription = anySubscriptionRows[0].total > 0;
 
-      return res
-        .status(200)
-        .json({ isAuthenticated: true, isSubscriptionActive, hasAnySubscription });
+      return res.status(200).json({
+        isAuthenticated: true,
+        isSubscriptionActive,
+        isSubscriptionExpired,
+        hasHadActiveSubscription,
+        hasAnySubscription,
+        papel: userPapel,
+      });
     } catch (error) {
       console.error("Erro ao verificar status da autenticação:", error);
       return res.status(500).json({ error: "Erro interno do servidor" });
     }
   }
 
-  // 👑 Verificar status da autenticação do admin
   async checkAdminAuthStatus(req, res) {
     try {
-      const userId = req.user?.id;
-      const papel = req.user?.papel;
-
-      if (!userId || papel !== "admin") {
+      if (req.user?.papel !== "admin") {
         return res.status(401).json({
           isAuthenticated: false,
           message: "Admin não autenticado",
         });
       }
-
       return res.status(200).json({ isAuthenticated: true });
     } catch (error) {
       console.error("Erro ao verificar status da autenticação admin:", error);
@@ -172,77 +194,115 @@ class AuthController {
     }
   }
 
-  // 👤 Buscar detalhes de um usuário
   async getUserDetails(req, res) {
     try {
       const { id } = req.params;
-
       const [userRows] = await pool.execute(
-        "SELECT id, nome, email FROM usuarios WHERE id = ?",
+        "SELECT id, nome, email, papel FROM usuarios WHERE id = ?",
         [id]
       );
-
       if (userRows.length === 0) {
         return res.status(404).json({ message: "Usuário não encontrado" });
       }
-
-      const usuario = userRows[0];
-
-      return res.status(200).json({
-        id: usuario.id,
-        nome: usuario.nome,
-        email: usuario.email,
-      });
+      res.status(200).json(userRows[0]);
     } catch (error) {
       console.error("Erro ao buscar detalhes do usuário:", error);
       return res.status(500).json({ error: "Erro interno do servidor" });
     }
   }
 
-  // 👤 Buscar detalhes do usuário atual
   async getCurrentUserDetails(req, res) {
     try {
       const userId = req.user?.id;
-      const papel = req.user?.papel;
-
       if (!userId) {
-        console.error("getCurrentUserDetails: ID do usuário não encontrado na requisição");
-        return res.status(401).json({ message: "Usuário não autenticado - ID faltando" });
+        return res
+          .status(401)
+          .json({ message: "Usuário não autenticado - ID faltando" });
       }
 
-      let query = "";
-      if (papel === "admin") {
-        query = "SELECT id, nome, email FROM admins WHERE id = ?";
-      } else if (papel === "usuario") {
-        query = "SELECT id, nome, email FROM usuarios WHERE id = ?";
-      } else {
-        console.warn(`getCurrentUserDetails: Papel de usuário inválido: ${papel}`);
-        return res.status(400).json({ message: "Tipo de usuário inválido" });
-      }
-
-      let userRows;
-      try {
-        [userRows] = await pool.execute(query, [userId]);
-      } catch (dbError) {
-        console.error("Erro ao executar consulta no banco de dados:", dbError);
-        return res.status(500).json({ error: "Erro ao consultar os detalhes do usuário" });
-      }
+      const [userRows] = await pool.execute(
+        "SELECT id, nome, email, papel FROM usuarios WHERE id = ?",
+        [userId]
+      );
 
       if (!userRows || userRows.length === 0) {
-        console.warn(`getCurrentUserDetails: Usuário com ID ${userId} não encontrado`);
         return res.status(404).json({ message: "Usuário não encontrado" });
       }
 
       const usuario = userRows[0];
-
-      return res.status(200).json({
-        id: usuario.id,
-        nome: usuario.nome,
-        email: usuario.email,
-      });
+      return res.status(200).json(usuario);
     } catch (error) {
-      console.error("Erro inesperado ao buscar detalhes do usuário atual:", error);
+      console.error(
+        "Erro inesperado ao buscar detalhes do usuário atual:",
+        error
+      );
       return res.status(500).json({ error: "Erro inesperado no servidor" });
+    }
+  }
+
+  async getTokens(req, res) {
+    try {
+      const userId = req.user?.id;
+      if (!userId) {
+        return res.status(200).json({ sessions: [] });
+      }
+
+      const [sessions] = await pool.execute(
+        `SELECT id, criado_em, expira_em, info_dispositivo, info_navegador, endereco_ip, papel 
+         FROM sessoes_usuarios 
+         WHERE usuario_id = ? AND esta_ativo = TRUE`,
+        [userId]
+      );
+
+      return res.status(200).json({ sessions });
+    } catch (error) {
+      console.error("Erro ao obter tokens:", error);
+      return res.status(500).json({ error: "Erro interno do servidor" });
+    }
+  }
+
+  async createToken(req, res) {
+    try {
+      const userId = req.user?.id;
+      if (!userId) {
+        return res.status(401).json({ message: "Usuário não autenticado" });
+      }
+      
+      const [userRows] = await pool.execute(
+        "SELECT id, nome, email, papel FROM usuarios WHERE id = ?",
+        [userId]
+      );
+      
+      if (userRows.length === 0) {
+          return res.status(404).json({ message: "Usuário não encontrado para criar novo token."});
+      }
+      
+      const user = userRows[0];
+
+      const token = jwt.sign(
+        { id: user.id, email: user.email, nome: user.nome, papel: user.papel },
+        JWT_SECRET,
+        { expiresIn: JWT_EXPIRES }
+      );
+
+      await pool.execute(
+        "INSERT INTO sessoes_usuarios (id, usuario_id, hash_token, expira_em, info_dispositivo, info_navegador, endereco_ip, papel) VALUES (?, ?, ?, DATE_ADD(NOW(), INTERVAL ? SECOND), ?, ?, ?, ?)",
+        [
+          uuidv4(),
+          user.id,
+          crypto.createHash("sha256").update(token).digest("hex"),
+          parseInt(process.env.JWT_EXPIRES_IN_SECONDS) || 28800,
+          req.headers["user-agent"] || "unknown",
+          req.headers["user-agent"] || "unknown",
+          req.ip,
+          user.papel,
+        ]
+      );
+
+      return res.status(201).json({ message: "Token criado com sucesso.", token: token });
+    } catch (error) {
+      console.error("Erro ao criar token:", error);
+      return res.status(500).json({ error: "Erro interno do servidor" });
     }
   }
 }
