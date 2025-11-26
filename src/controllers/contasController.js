@@ -79,6 +79,7 @@ class ContasController {
         message: "Conta criada com sucesso",
         user,
         papel: papel,
+        token: token,
       });
     } catch (error) {
       console.error("Erro ao criar conta:", error);
