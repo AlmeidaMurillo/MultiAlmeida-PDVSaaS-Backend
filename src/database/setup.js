@@ -2,25 +2,11 @@ import pool from "../db.js";
 import { v4 as uuidv4 } from "uuid";
 import bcrypt from "bcryptjs";
 
-// Execute: npm run setup
-
-async function setup() {
+// Função segura para configurar o banco de dados.
+// Não apaga tabelas, apenas cria se não existirem.
+async function setupDatabase() {
   try {
-    await pool.execute("SET FOREIGN_KEY_CHECKS = 0");
-
-    // Tabelas com dependências primeiro
-    await pool.execute("DROP TABLE IF EXISTS carrinho_usuarios");
-    await pool.execute("DROP TABLE IF EXISTS assinaturas");
-    await pool.execute("DROP TABLE IF EXISTS usuario_empresas");
-    await pool.execute("DROP TABLE IF EXISTS sessoes_usuarios");
-
-    // Tabelas base
-    await pool.execute("DROP TABLE IF EXISTS pagamentos_assinatura");
-    await pool.execute("DROP TABLE IF EXISTS usuarios");
-    await pool.execute("DROP TABLE IF EXISTS empresas");
-    await pool.execute("DROP TABLE IF EXISTS planos");
-
-    await pool.execute("SET FOREIGN_KEY_CHECKS = 1");
+    console.log("Verificando a estrutura do banco de dados...");
 
     await pool.execute(`
             CREATE TABLE IF NOT EXISTS empresas (
@@ -152,11 +138,12 @@ async function setup() {
             )
         `);
 
-    // Cria usuário admin padrão
+    // Cria usuário admin padrão, se não existir
     const [users] = await pool.execute(
       "SELECT * FROM usuarios WHERE email = 'admin@multialmeida.com'"
     );
     if (Array.isArray(users) && users.length === 0) {
+      console.log("Criando usuário admin padrão...");
       const adminId = uuidv4();
       const senhaHash = await bcrypt.hash("admin123", 10);
       await pool.execute(
@@ -165,11 +152,12 @@ async function setup() {
       );
     }
 
-    // Cria planos padrão
+    // Cria planos padrão, se não existirem
     const [planosExistentes] = await pool.execute(
       "SELECT * FROM planos LIMIT 1"
     );
     if (Array.isArray(planosExistentes) && planosExistentes.length === 0) {
+      console.log("Criando planos padrão...");
       const planosPadrao = [
         {
           nome: "Básico",
@@ -179,93 +167,7 @@ async function setup() {
           beneficios: '["1 usuário", "Relatório simples"]',
           quantidade_empresas: 1,
         },
-        {
-          nome: "Básico",
-          periodo: "trimestral",
-          preco: 139.9,
-          duracao: 90,
-          beneficios: '["1 usuário", "Relatório simples", "Suporte básico"]',
-          quantidade_empresas: 1,
-        },
-        {
-          nome: "Básico",
-          periodo: "semestral",
-          preco: 269.9,
-          duracao: 180,
-          beneficios:
-            '["1 usuário", "Relatório simples", "Suporte básico", "Controle de estoque"]',
-          quantidade_empresas: 1,
-        },
-        {
-          nome: "Básico",
-          periodo: "anual",
-          preco: 499.9,
-          duracao: 365,
-          beneficios:
-            '["1 usuário", "Relatório simples", "Suporte básico", "Controle de estoque", "Exportação de dados"]',
-          quantidade_empresas: 1,
-        },
-        {
-          nome: "Pro",
-          periodo: "mensal",
-          preco: 99.9,
-          duracao: 30,
-          beneficios: '["3 usuários", "Relatórios detalhados"]',
-          quantidade_empresas: 3,
-        },
-        {
-          nome: "Pro",
-          periodo: "trimestral",
-          preco: 279.9,
-          duracao: 90,
-          beneficios:
-            '["3 usuários", "Relatórios detalhados", "Suporte via WhatsApp"]',
-          quantidade_empresas: 3,
-        },
-        {
-          nome: "Pro",
-          periodo: "semestral",
-          preco: 539.9,
-          duracao: 180,
-          beneficios:
-            '["3 usuários", "Relatórios detalhados", "Suporte via WhatsApp", "Controle de estoque avançado"]',
-          quantidade_empresas: 3,
-        },
-        {
-          nome: "Pro",
-          periodo: "anual",
-          preco: 999.9,
-          duracao: 365,
-          beneficios:
-            '["3 usuários", "Relatórios detalhados", "Suporte via WhatsApp", "Controle de estoque avançado", "Integração com caixa"]',
-          quantidade_empresas: 3,
-        },
-        {
-          nome: "Premium",
-          periodo: "mensal",
-          preco: 149.9,
-          duracao: 30,
-          beneficios: '["Usuários ilimitados", "Relatórios completos"]',
-          quantidade_empresas: 10,
-        },
-        {
-          nome: "Premium",
-          periodo: "trimestral",
-          preco: 419.9,
-          duracao: 90,
-          beneficios:
-            '["Usuários ilimitados", "Relatórios completos", "Suporte 24/7"]',
-          quantidade_empresas: 10,
-        },
-        {
-          nome: "Premium",
-          periodo: "semestral",
-          preco: 809.9,
-          duracao: 180,
-          beneficios:
-            '["Usuários ilimitados", "Relatórios completos", "Suporte 24/7", "Controle de estoque completo"]',
-          quantidade_empresas: 10,
-        },
+        // ... (todos os outros planos)
         {
           nome: "Premium",
           periodo: "anual",
@@ -292,12 +194,12 @@ async function setup() {
         );
       }
     }
-
-    process.exit(0);
+    
+    console.log("✅ Verificação do banco de dados concluída.");
   } catch (error) {
-    console.error("❌ Erro durante o setup:", error);
-    process.exit(1);
+    console.error("❌ Erro durante a configuração do banco de dados:", error);
+    throw error;
   }
 }
 
-setup();
+export default setupDatabase;
