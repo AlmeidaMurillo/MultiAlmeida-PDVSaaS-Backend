@@ -13,12 +13,20 @@ import { authMiddleware, requireAdmin, optionalAuthMiddleware, requireSubscripti
 const routes = Router();
 
 
-// 🔹 Rotas para tokens - pegar e criar
-routes.get('/api/tokens', optionalAuthMiddleware, AuthController.getTokens);
-routes.post('/api/tokens', authMiddleware, AuthController.createToken);
+// ------------------- Rotas de Autenticação -------------------
+// As rotas de autenticação agora vivem sob /api/auth
+const authRoutes = Router();
+authRoutes.post('/login', [
+    body('email').isEmail().normalizeEmail().withMessage('Email inválido'),
+    body('senha').notEmpty().withMessage('A senha é obrigatória'),
+  ], AuthController.login);
 
-// 🔹 Logout
-routes.post('/api/logout', authMiddleware, AuthController.logout);
+authRoutes.post('/refresh', AuthController.refresh); // Nova rota para refresh
+authRoutes.post('/logout', AuthController.logout); // Logout não precisa de authMiddleware
+authRoutes.get('/status', authMiddleware, AuthController.checkAuthStatus);
+authRoutes.get('/user-details', authMiddleware, AuthController.getCurrentUserDetails);
+authRoutes.get('/my-subscriptions', authMiddleware, ContasController.getSubscriptions); // Movido para aqui
+routes.use('/api/auth', authRoutes);
 
 
 // 🔹 Criação de conta
@@ -38,22 +46,8 @@ routes.post(
   ContasController.criarConta
 );
 
-// 🔹 Login normal (usuário)
-routes.post(
-  '/api/login',
-  [
-    body('email').isEmail().normalizeEmail().withMessage('Email inválido'),
-    body('senha')
-      .isLength({ min: 6 })
-      .withMessage('A senha deve ter no mínimo 6 caracteres'),
-  ],
-  AuthController.login
-);
-
-// 🔹 Verificação de autenticação
-routes.get('/api/auth/status', authMiddleware, AuthController.checkAuthStatus);
-routes.get('/api/admin/auth/status', authMiddleware, AuthController.checkAdminAuthStatus);
-routes.get('/api/admin/verificar-token', authMiddleware, AuthController.verificarToken);
+// 🔹 Verificação de autenticação de Admin
+routes.get('/api/admin/auth/status', authMiddleware, requireAdmin, AuthController.checkAdminAuthStatus);
 
 // 🔹 Empresas (apenas admin)
 routes.post('/api/admin/empresas', authMiddleware, requireAdmin, EmpresasController.create);
@@ -62,12 +56,6 @@ routes.get('/api/admin/empresas/:id', authMiddleware, requireAdmin, EmpresasCont
 
 // 🔹 Usuários (público)
 routes.get('/api/usuarios/:id', AuthController.getUserDetails);
-
-// 🔹 Detalhes do usuário atual
-routes.get('/api/auth/user-details', authMiddleware, AuthController.getCurrentUserDetails);
-
-// 🔹 Assinaturas do usuário atual
-routes.get('/api/auth/my-subscriptions', authMiddleware, ContasController.getSubscriptions);
 
 // 🔹 Pagamentos
 routes.post('/api/payments/initiate', authMiddleware, PaymentController.initiatePayment);

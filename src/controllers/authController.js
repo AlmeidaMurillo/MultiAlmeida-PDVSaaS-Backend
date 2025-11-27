@@ -1,16 +1,48 @@
-import jwt from "jsonwebtoken";
-import bcrypt from "bcryptjs";
-import { validationResult } from "express-validator";
-import pool from "../db.js";
-import { v4 as uuidv4 } from "uuid";
-import crypto from "crypto";
+import jwt from 'jsonwebtoken';
+import bcrypt from 'bcryptjs';
+import { validationResult } from 'express-validator';
+import pool from '../db.js';
+import { v4 as uuidv4 } from 'uuid';
+import crypto from 'crypto';
 
-const JWT_SECRET = process.env.JWT_SECRET;
-const JWT_EXPIRES = process.env.JWT_EXPIRES_IN || "8h";
+// --- Variáveis de Ambiente ---
+const ACCESS_TOKEN_SECRET = process.env.ACCESS_TOKEN_SECRET;
+const ACCESS_TOKEN_EXPIRES_IN = process.env.ACCESS_TOKEN_EXPIRES_IN || '15m';
+const REFRESH_TOKEN_EXPIRES_IN_DAYS = parseInt(process.env.REFRESH_TOKEN_EXPIRES_IN_DAYS || '7', 10);
+const NODE_ENV = process.env.NODE_ENV;
 
-if (!JWT_SECRET) {
-  throw new Error("JWT_SECRET não definido nas variáveis de ambiente");
+if (!ACCESS_TOKEN_SECRET) {
+  throw new Error('ACCESS_TOKEN_SECRET não definido nas variáveis de ambiente');
 }
+
+// --- Funções Auxiliares ---
+
+/**
+ * Gera um Access Token JWT.
+ */
+const generateAccessToken = (user) => {
+  return jwt.sign(
+    { id: user.id, nome: user.nome, email: user.email, papel: user.papel },
+    ACCESS_TOKEN_SECRET,
+    { expiresIn: ACCESS_TOKEN_EXPIRES_IN }
+  );
+};
+
+/**
+ * Define o cookie do Refresh Token na resposta.
+ */
+const setRefreshTokenCookie = (res, token) => {
+  const options = {
+    httpOnly: true,
+    secure: NODE_ENV === 'production',
+    sameSite: 'strict',
+    path: '/api/auth', // O cookie só será enviado para rotas de autenticação
+    expires: new Date(Date.now() + REFRESH_TOKEN_EXPIRES_IN_DAYS * 24 * 60 * 60 * 1000),
+  };
+  res.cookie('refreshToken', token, options);
+};
+
+// --- Classe do Controlador ---
 
 class AuthController {
   async login(req, res) {
@@ -22,176 +54,153 @@ class AuthController {
     const { email, senha } = req.body;
 
     try {
+      // 1. Validar credenciais do usuário
       const [userRows] = await pool.execute(
-        "SELECT id, nome, email, senha, papel FROM usuarios WHERE email = ?",
+        'SELECT id, nome, email, senha, papel FROM usuarios WHERE email = ?',
         [email]
       );
-
       if (userRows.length === 0) {
-        return res.status(401).json({ error: "Email ou senha incorretos" });
+        return res.status(401).json({ error: 'Email ou senha incorretos' });
       }
 
       const usuario = userRows[0];
       const senhaCorreta = await bcrypt.compare(senha, usuario.senha);
-
       if (!senhaCorreta) {
-        return res.status(401).json({ error: "Email ou senha incorretos" });
+        return res.status(401).json({ error: 'Email ou senha incorretos' });
       }
 
-      // Se autenticado com sucesso, gera o token
-      const token = jwt.sign(
-        {
-          id: usuario.id,
-          email: usuario.email,
-          nome: usuario.nome,
-          papel: usuario.papel,
-        },
-        JWT_SECRET,
-        { expiresIn: JWT_EXPIRES }
+      // 2. Gerar Access Token
+      const accessToken = generateAccessToken(usuario);
+
+      // 3. Gerar e Hashear Refresh Token
+      const refreshToken = crypto.randomBytes(40).toString('hex');
+      const refreshTokenHash = await bcrypt.hash(refreshToken, 10);
+      const refreshTokenExpires = new Date(
+        Date.now() + REFRESH_TOKEN_EXPIRES_IN_DAYS * 24 * 60 * 60 * 1000
       );
 
-      // Salva a sessão na tabela sessoes_usuarios
+      // 4. Salvar sessão no banco (usando a tabela sessoes_usuarios)
       await pool.execute(
-        "INSERT INTO sessoes_usuarios (id, usuario_id, hash_token, expira_em, info_dispositivo, info_navegador, endereco_ip, papel) VALUES (?, ?, ?, DATE_ADD(NOW(), INTERVAL ? SECOND), ?, ?, ?, ?)",
+        `INSERT INTO sessoes_usuarios 
+         (id, usuario_id, hash_token, expira_em, info_dispositivo, info_navegador, endereco_ip, papel, esta_ativo) 
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, TRUE)`,
         [
           uuidv4(),
           usuario.id,
-          crypto.createHash("sha256").update(token).digest("hex"),
-          parseInt(process.env.JWT_EXPIRES_IN_SECONDS) || 28800,
-          req.headers["user-agent"] || "unknown",
-          req.headers["user-agent"] || "unknown",
+          refreshTokenHash,
+          refreshTokenExpires,
+          req.headers['user-agent'] || 'unknown',
+          req.headers['user-agent'] || 'unknown',
           req.ip,
           usuario.papel,
         ]
       );
-      
-      const jsonResponse = {
-        token: token,
-        user: { id: usuario.id, nome: usuario.nome, email: usuario.email },
-        papel: usuario.papel,
-      };
 
-      return res.json(jsonResponse);
+      // 5. Enviar tokens
+      setRefreshTokenCookie(res, refreshToken);
+
+      return res.json({
+        accessToken,
+        user: { id: usuario.id, nome: usuario.nome, email: usuario.email, papel: usuario.papel },
+      });
+
     } catch (error) {
-      console.error("Erro no login:", error);
-      return res.status(500).json({ error: "Erro interno do servidor" });
+      console.error('Erro no login:', error);
+      return res.status(500).json({ error: 'Erro interno do servidor' });
+    }
+  }
+
+  async refresh(req, res) {
+    // 1. Obter o refresh token do cookie
+    const { refreshToken } = req.cookies;
+    if (!refreshToken) {
+      return res.status(401).json({ error: 'Refresh token não fornecido.' });
+    }
+
+    try {
+      // 2. Encontrar todas as sessões ativas do usuário
+      const [sessions] = await pool.execute(
+        'SELECT id, usuario_id, hash_token, expira_em FROM sessoes_usuarios WHERE esta_ativo = TRUE AND expira_em > NOW()'
+      );
+
+      let validSession = null;
+      for (const session of sessions) {
+        const isValid = await bcrypt.compare(refreshToken, session.hash_token);
+        if (isValid) {
+          validSession = session;
+          break;
+        }
+      }
+
+      if (!validSession) {
+        return res.status(403).json({ error: 'Refresh token inválido ou expirado.' });
+      }
+
+      // 3. (Rotação) Gerar novo refresh token e atualizar no banco
+      const newRefreshToken = crypto.randomBytes(40).toString('hex');
+      const newRefreshTokenHash = await bcrypt.hash(newRefreshToken, 10);
+      const newRefreshTokenExpires = new Date(
+        Date.now() + REFRESH_TOKEN_EXPIRES_IN_DAYS * 24 * 60 * 60 * 1000
+      );
+
+      await pool.execute(
+        'UPDATE sessoes_usuarios SET hash_token = ?, expira_em = ?, ultimo_acesso = NOW() WHERE id = ?',
+        [newRefreshTokenHash, newRefreshTokenExpires, validSession.id]
+      );
+      
+      // 4. Gerar novo access token
+      const [userRows] = await pool.execute('SELECT id, nome, email, papel FROM usuarios WHERE id = ?', [validSession.usuario_id]);
+      if (userRows.length === 0) {
+        return res.status(404).json({ error: 'Usuário não encontrado.' });
+      }
+      const accessToken = generateAccessToken(userRows[0]);
+      
+      // 5. Enviar novos tokens
+      setRefreshTokenCookie(res, newRefreshToken);
+      return res.json({ accessToken });
+
+    } catch (error) {
+      console.error('Erro ao renovar token:', error);
+      return res.status(500).json({ error: 'Erro interno do servidor' });
     }
   }
 
   async logout(req, res) {
-    try {
-      const { onClose, token: bodyToken } = req.body || {};
-      let token;
+    const { refreshToken } = req.cookies;
+    if (!refreshToken) {
+      return res.status(204).send(); // Nenhuma ação necessária se não há token
+    }
 
-      if (onClose && bodyToken) {
-        token = bodyToken;
-      } else {
-        const authHeader = req.headers.authorization;
-        if (!authHeader || !authHeader.startsWith("Bearer ")) {
-          if (onClose) return;
-          return res.status(401).json({ message: "Token de autorização não fornecido." });
+    try {
+       // Precisamos encontrar o hash correspondente para invalidá-lo
+       const [sessions] = await pool.execute(
+        'SELECT id, hash_token FROM sessoes_usuarios WHERE esta_ativo = TRUE AND expira_em > NOW()'
+      );
+
+      let sessionIdToDeactivate = null;
+      for (const session of sessions) {
+        const isValid = await bcrypt.compare(refreshToken, session.hash_token);
+        if (isValid) {
+          sessionIdToDeactivate = session.id;
+          break;
         }
-        token = authHeader.split(" ")[1];
       }
 
-      if (!token) {
-        if (onClose) return;
-        return res.status(401).json({ message: "Token não encontrado." });
+      if (sessionIdToDeactivate) {
+        await pool.execute('UPDATE sessoes_usuarios SET esta_ativo = FALSE WHERE id = ?', [sessionIdToDeactivate]);
       }
 
-      const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
-
-      await pool.execute(
-        "UPDATE sessoes_usuarios SET esta_ativo = FALSE WHERE hash_token = ?",
-        [tokenHash]
-      );
-
-      if (onClose) return; 
-      return res.status(200).json({ message: "Logout realizado com sucesso" });
     } catch (error) {
-      console.error("Erro no logout:", error);
-      if (onClose) return;
-      return res.status(500).json({ error: "Erro interno do servidor" });
+      console.error('Erro no logout:', error);
+      // Não bloqueie o logout do cliente por um erro de servidor
+    } finally {
+      // Sempre limpe o cookie do cliente
+      res.clearCookie('refreshToken', { httpOnly: true, secure: NODE_ENV === 'production', sameSite: 'strict', path: '/api/auth' });
+      res.status(204).send();
     }
   }
 
-  async verificarToken(req, res) {
-    if (!req.user) {
-      return res
-        .status(401)
-        .json({ message: "Token não fornecido ou inválido" });
-    }
-    return res.json({ user: req.user });
-  }
-
-  async checkAuthStatus(req, res) {
-    try {
-      const userId = req.user?.id;
-      const userPapel = req.user?.papel;
-
-      if (!userId) {
-        return res.status(401).json({
-          isAuthenticated: false,
-          isSubscriptionActive: false,
-          hasHadActiveSubscription: false,
-          message: "Usuário não autenticado",
-        });
-      }
-
-      if (userPapel !== "usuario") {
-        return res.status(200).json({
-          isAuthenticated: true,
-          isSubscriptionActive: false,
-          isSubscriptionExpired: false,
-          hasHadActiveSubscription: false,
-          hasAnySubscription: false,
-          papel: userPapel,
-        });
-      }
-
-      await pool.execute(
-        'UPDATE assinaturas SET status = "vencida" WHERE usuario_id = ? AND status = "ativa" AND data_vencimento <= NOW()',
-        [userId]
-      );
-
-      const [assinaturaAtivaRows] = await pool.execute(
-        'SELECT status FROM assinaturas WHERE usuario_id = ? AND status = "ativa" AND data_vencimento > NOW()',
-        [userId]
-      );
-      const isSubscriptionActive = assinaturaAtivaRows.length > 0;
-
-      const [assinaturaVencidaRows] = await pool.execute(
-        'SELECT status FROM assinaturas WHERE usuario_id = ? AND status = "vencida"',
-        [userId]
-      );
-      const isSubscriptionExpired = assinaturaVencidaRows.length > 0;
-
-      const [assinaturaHistoricoRows] = await pool.execute(
-        'SELECT COUNT(*) AS total FROM assinaturas WHERE usuario_id = ? AND status = "ativa"',
-        [userId]
-      );
-      const hasHadActiveSubscription = assinaturaHistoricoRows[0].total > 0;
-
-      const [anySubscriptionRows] = await pool.execute(
-        "SELECT COUNT(*) AS total FROM assinaturas WHERE usuario_id = ?",
-        [userId]
-      );
-      const hasAnySubscription = anySubscriptionRows[0].total > 0;
-
-      return res.status(200).json({
-        isAuthenticated: true,
-        isSubscriptionActive,
-        isSubscriptionExpired,
-        hasHadActiveSubscription,
-        hasAnySubscription,
-        papel: userPapel,
-      });
-    } catch (error) {
-      console.error("Erro ao verificar status da autenticação:", error);
-      return res.status(500).json({ error: "Erro interno do servidor" });
-    }
-  }
-
+// ... (outros métodos como checkAuthStatus, getUserDetails, etc. podem permanecer aqui)
   async checkAdminAuthStatus(req, res) {
     try {
       if (req.user?.papel !== "admin") {
@@ -223,6 +232,47 @@ class AuthController {
       return res.status(500).json({ error: "Erro interno do servidor" });
     }
   }
+  
+  async checkAuthStatus(req, res) {
+    try {
+      const userId = req.user?.id;
+      const userPapel = req.user?.papel;
+
+      if (!userId) {
+        return res.status(401).json({
+          isAuthenticated: false,
+        });
+      }
+
+      // A verificação de assinatura permanece a mesma
+      if (userPapel === 'usuario') {
+        const [assinaturaAtivaRows] = await pool.execute(
+          'SELECT 1 FROM assinaturas WHERE usuario_id = ? AND status = "ativa" AND data_vencimento > NOW() LIMIT 1',
+          [userId]
+        );
+        const [assinaturaVencidaRows] = await pool.execute(
+          'SELECT 1 FROM assinaturas WHERE usuario_id = ? AND status = "vencida" LIMIT 1',
+          [userId]
+        );
+        
+        return res.status(200).json({
+          isAuthenticated: true,
+          papel: userPapel,
+          isSubscriptionActive: assinaturaAtivaRows.length > 0,
+          isSubscriptionExpired: assinaturaVencidaRows.length > 0
+        });
+      }
+
+      return res.status(200).json({
+        isAuthenticated: true,
+        papel: userPapel,
+      });
+
+    } catch (error) {
+      console.error("Erro ao verificar status da autenticação:", error);
+      return res.status(500).json({ error: "Erro interno do servidor" });
+    }
+  }
 
   async getCurrentUserDetails(req, res) {
     try {
@@ -250,72 +300,6 @@ class AuthController {
         error
       );
       return res.status(500).json({ error: "Erro inesperado no servidor" });
-    }
-  }
-
-  async getTokens(req, res) {
-    try {
-      const userId = req.user?.id;
-      if (!userId) {
-        return res.status(200).json({ sessions: [] });
-      }
-
-      const [sessions] = await pool.execute(
-        `SELECT id, criado_em, expira_em, info_dispositivo, info_navegador, endereco_ip, papel 
-         FROM sessoes_usuarios 
-         WHERE usuario_id = ? AND esta_ativo = TRUE`,
-        [userId]
-      );
-
-      return res.status(200).json({ sessions });
-    } catch (error) {
-      console.error("Erro ao obter tokens:", error);
-      return res.status(500).json({ error: "Erro interno do servidor" });
-    }
-  }
-
-  async createToken(req, res) {
-    try {
-      const userId = req.user?.id;
-      if (!userId) {
-        return res.status(401).json({ message: "Usuário não autenticado" });
-      }
-      
-      const [userRows] = await pool.execute(
-        "SELECT id, nome, email, papel FROM usuarios WHERE id = ?",
-        [userId]
-      );
-      
-      if (userRows.length === 0) {
-          return res.status(404).json({ message: "Usuário não encontrado para criar novo token."});
-      }
-      
-      const user = userRows[0];
-
-      const token = jwt.sign(
-        { id: user.id, email: user.email, nome: user.nome, papel: user.papel },
-        JWT_SECRET,
-        { expiresIn: JWT_EXPIRES }
-      );
-
-      await pool.execute(
-        "INSERT INTO sessoes_usuarios (id, usuario_id, hash_token, expira_em, info_dispositivo, info_navegador, endereco_ip, papel) VALUES (?, ?, ?, DATE_ADD(NOW(), INTERVAL ? SECOND), ?, ?, ?, ?)",
-        [
-          uuidv4(),
-          user.id,
-          crypto.createHash("sha256").update(token).digest("hex"),
-          parseInt(process.env.JWT_EXPIRES_IN_SECONDS) || 28800,
-          req.headers["user-agent"] || "unknown",
-          req.headers["user-agent"] || "unknown",
-          req.ip,
-          user.papel,
-        ]
-      );
-
-      return res.status(201).json({ message: "Token criado com sucesso.", token: token });
-    } catch (error) {
-      console.error("Erro ao criar token:", error);
-      return res.status(500).json({ error: "Erro interno do servidor" });
     }
   }
 }

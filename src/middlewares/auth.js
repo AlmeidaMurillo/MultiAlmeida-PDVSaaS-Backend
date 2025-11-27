@@ -1,133 +1,52 @@
-import jwt from "jsonwebtoken";
-import dotenv from 'dotenv';
+import jwt from 'jsonwebtoken';
 import pool from '../db.js';
-import crypto from 'crypto';
 
-dotenv.config();
-
-const JWT_SECRET = process.env.JWT_SECRET;
-if (!JWT_SECRET) {
-  throw new Error("JWT_SECRET não definido nas variáveis de ambiente");
+const ACCESS_TOKEN_SECRET = process.env.ACCESS_TOKEN_SECRET;
+if (!ACCESS_TOKEN_SECRET) {
+  throw new Error("ACCESS_TOKEN_SECRET não definido nas variáveis de ambiente");
 }
 
-// Middleware de autenticação opcional
-export async function optionalAuthMiddleware(req, res, next) {
-  let token;
-
-  if (
-    req.headers.authorization &&
-    req.headers.authorization.startsWith("Bearer ")
-  ) {
-    token = req.headers.authorization.split(" ")[1];
-  }
-
-  if (!token) {
-    return next();
-  }
-
-  try {
-    const decoded = jwt.verify(token, JWT_SECRET, { ignoreExpiration: true });
-    const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
-    
-    // Busca a sessão no banco de dados pelo hash do token
-    const [sessionRows] = await pool.execute(
-      "SELECT id, usuario_id, expira_em, esta_ativo FROM sessoes_usuarios WHERE hash_token = ?",
-      [tokenHash]
-    );
-
-    // Se a sessão for encontrada, for válida e estiver ativa, anexa o usuário
-    if (sessionRows.length > 0) {
-      const session = sessionRows[0];
-      const agora = new Date();
-
-      if (session.esta_ativo && agora <= new Date(session.expira_em)) {
-        req.user = {
-            id: decoded.id,
-            email: decoded.email,
-            nome: decoded.nome,
-            papel: session.papel, // Usa o papel da sessão do banco de dados
-            tokenHash: tokenHash
-        };
-      }
-    }
-    
-    // Continua para a próxima rota, com ou sem usuário autenticado
-    return next();
-  } catch (err) {
-    // Se o token for inválido (assinatura, etc.), continua sem usuário autenticado
-    return next();
-  }
-}
-
-// Middleware de autenticação (estrito)
 export async function authMiddleware(req, res, next) {
-  let token;
-
-  // 1. Tenta pegar o token do cabeçalho Authorization
-  if (
-    req.headers.authorization &&
-    req.headers.authorization.startsWith("Bearer ")
-  ) {
-    token = req.headers.authorization.split(" ")[1];
-  }
+  const authHeader = req.headers.authorization;
+  const token = authHeader && authHeader.split(' ')[1];
 
   if (!token) {
-    return res.status(401).json({ error: "Token não fornecido" });
+    return res.status(401).json({ error: "Token de acesso não fornecido." });
   }
 
   try {
-    // 1. Verifica a assinatura do JWT e decodifica sem verificar a expiração, pois o DB é a fonte da verdade.
-    const decoded = jwt.verify(token, JWT_SECRET, { ignoreExpiration: true });
-    const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
-
-    // 2. Busca a sessão no banco de dados pelo hash do token
-    const [sessionRows] = await pool.execute(
-      "SELECT id, usuario_id, expira_em, esta_ativo, papel FROM sessoes_usuarios WHERE hash_token = ?",
-      [tokenHash]
-    );
-
-    if (sessionRows.length === 0) {
-      return res.status(401).json({ error: "Sessão inválida. Por favor, faça login novamente." });
-    }
-
-    const session = sessionRows[0];
-    const agora = new Date();
-
-    // 3. Verifica se a sessão está ativa e se não expirou.
-    if (!session.esta_ativo || agora > new Date(session.expira_em)) {
-      // Se a sessão expirou e ainda está marcada como ativa, inativa-a.
-      if (session.esta_ativo) {
-        await pool.execute(
-          "UPDATE sessoes_usuarios SET esta_ativo = FALSE WHERE id = ?",
-          [session.id]
-        );
-      } else {
-      }
-      return res.status(401).json({ error: "Sessão expirada ou inválida. Por favor, faça login novamente." });
-    }
-
-    // 4. Se a sessão é válida, anexa os dados do JWT decodificado ao request.
-    req.user = { 
-        id: decoded.id, 
-        email: decoded.email, 
-        nome: decoded.nome, 
-        papel: session.papel, // Usa o papel da sessão do banco de dados
-        tokenHash: tokenHash 
-    };
-    return next();
-
+    const decoded = jwt.verify(token, ACCESS_TOKEN_SECRET);
+    req.user = decoded; // Anexa o payload do usuário (id, nome, email, papel)
+    next();
   } catch (err) {
-    // Este catch agora lida principalmente com JWTs malformados ou com assinatura inválida.
-    if (err instanceof jwt.JsonWebTokenError) {
-      console.log("Erro de JWT:", err.message);
-      return res.status(401).json({ error: "Token inválido ou malformado." });
+    if (err instanceof jwt.TokenExpiredError) {
+      return res.status(401).json({ error: "Token de acesso expirado." });
     }
-    
-    // Outros erros inesperados
-    console.error("Erro inesperado no middleware de autenticação:", err);
+    if (err instanceof jwt.JsonWebTokenError) {
+      return res.status(401).json({ error: "Token de acesso inválido." });
+    }
     return res.status(500).json({ error: "Erro interno no servidor." });
   }
 }
+
+// O middleware optionalAuthMiddleware é complexo e não se alinha bem com o novo fluxo.
+// A lógica do frontend com interceptors torna-o largamente desnecessário.
+// Pode ser removido ou simplificado se um caso de uso específico permanecer.
+export async function optionalAuthMiddleware(req, res, next) {
+  const authHeader = req.headers.authorization;
+  const token = authHeader && authHeader.split(' ')[1];
+
+  if (token) {
+    try {
+      const decoded = jwt.verify(token, ACCESS_TOKEN_SECRET);
+      req.user = decoded;
+    } catch (err) {
+      // Ignora o erro e continua sem usuário se o token for inválido/expirado
+    }
+  }
+  next();
+}
+
 
 // Middleware que exige ser admin
 export function requireAdmin(req, res, next) {
