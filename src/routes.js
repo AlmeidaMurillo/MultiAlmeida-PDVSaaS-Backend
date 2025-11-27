@@ -84,10 +84,10 @@ routes.put('/api/admin/planos/:id', authMiddleware, requireAdmin, PlanosControll
 routes.delete('/api/admin/planos/:id', authMiddleware, requireAdmin, PlanosController.delete);
 
 // 🔹 Carrinho
-routes.get('/api/carrinho', authMiddleware, requireSubscription, CarrinhoController.listar);
-routes.post('/api/carrinho', authMiddleware, requireSubscription, CarrinhoController.adicionar);
-routes.delete('/api/carrinho/:id', authMiddleware, requireSubscription, CarrinhoController.remover);
-routes.put('/api/carrinho/:id/quantidade', authMiddleware, requireSubscription, CarrinhoController.atualizarQuantidade);
-routes.delete('/api/carrinho', authMiddleware, requireSubscription, CarrinhoController.limpar);
+routes.get('/api/carrinho', authMiddleware, CarrinhoController.listar);
+routes.post('/api/carrinho', authMiddleware, CarrinhoController.adicionar);
+routes.delete('/api/carrinho/:id', authMiddleware, CarrinhoController.remover);
+routes.put('/api/carrinho/:id/quantidade', authMiddleware, CarrinhoController.atualizarQuantidade);
+routes.delete('/api/carrinho', authMiddleware, CarrinhoController.limpar);
 
 export default routes;
