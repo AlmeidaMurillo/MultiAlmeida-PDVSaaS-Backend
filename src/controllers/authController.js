@@ -80,18 +80,25 @@ class AuthController {
 
   async logout(req, res) {
     try {
-      const authHeader = req.headers.authorization;
-      const { onClose } = req.body || {}; // Espera que onClose seja true se for de beforeunload
+      const { onClose, token: bodyToken } = req.body || {};
+      let token;
 
-      if (!authHeader || !authHeader.startsWith("Bearer ")) {
-        // Se onClose for true, não envia uma resposta. Caso contrário, envia 401.
-        if (onClose) return; 
-        return res
-          .status(401)
-          .json({ message: "Token de autorização não fornecido." });
+      if (onClose && bodyToken) {
+        token = bodyToken;
+      } else {
+        const authHeader = req.headers.authorization;
+        if (!authHeader || !authHeader.startsWith("Bearer ")) {
+          if (onClose) return;
+          return res.status(401).json({ message: "Token de autorização não fornecido." });
+        }
+        token = authHeader.split(" ")[1];
       }
 
-      const token = authHeader.split(" ")[1];
+      if (!token) {
+        if (onClose) return;
+        return res.status(401).json({ message: "Token não encontrado." });
+      }
+
       const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
 
       await pool.execute(
@@ -99,12 +106,10 @@ class AuthController {
         [tokenHash]
       );
 
-      // Se onClose for true, não envia uma resposta. Caso contrário, envia 200.
       if (onClose) return; 
       return res.status(200).json({ message: "Logout realizado com sucesso" });
     } catch (error) {
       console.error("Erro no logout:", error);
-      // Se onClose for true, não envia uma resposta. Caso contrário, envia 500.
       if (onClose) return;
       return res.status(500).json({ error: "Erro interno do servidor" });
     }
