@@ -81,7 +81,7 @@ class AuthController {
   async logout(req, res) {
     try {
       const authHeader = req.headers.authorization;
-      const { onClose } = req.body; // Espera que onClose seja true se for de beforeunload
+      const { onClose } = req.body || {}; // Espera que onClose seja true se for de beforeunload
 
       if (!authHeader || !authHeader.startsWith("Bearer ")) {
         // Se onClose for true, não envia uma resposta. Caso contrário, envia 401.
