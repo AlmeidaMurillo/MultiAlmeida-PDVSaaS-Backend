@@ -176,3 +176,37 @@ export function requireEmpresa(req, res, next) {
 
   return res.status(403).json({ error: "Tipo de usuário não autorizado" });
 }
+
+// Middleware que exige assinatura ativa ou vencida para não-admins
+export async function requireSubscription(req, res, next) {
+  if (!req.user) {
+    return res.status(401).json({ error: "Usuário não autenticado" });
+  }
+
+  // Admins sempre têm acesso
+  if (req.user.papel === "admin") {
+    return next();
+  }
+
+  // Verifica se o usuário não-admin tem uma assinatura ativa ou vencida
+  try {
+    const [assinaturasRows] = await pool.execute(
+      `SELECT id FROM assinaturas 
+       WHERE usuario_id = ? 
+       AND (status = 'ativa' OR status = 'vencida')`,
+      [req.user.id]
+    );
+
+    if (assinaturasRows.length === 0) {
+      return res.status(403).json({ 
+        error: "Acesso negado. Você não possui uma assinatura ativa ou vencida para acessar o painel." 
+      });
+    }
+
+    return next();
+  } catch (err) {
+    console.error("Erro na verificação de assinatura:", err);
+    return res.status(500).json({ error: "Erro interno no servidor ao verificar assinatura." });
+  }
+}
+
