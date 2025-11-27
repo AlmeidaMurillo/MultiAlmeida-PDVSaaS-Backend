@@ -81,7 +81,11 @@ class AuthController {
   async logout(req, res) {
     try {
       const authHeader = req.headers.authorization;
+      const { onClose } = req.body; // Espera que onClose seja true se for de beforeunload
+
       if (!authHeader || !authHeader.startsWith("Bearer ")) {
+        // Se onClose for true, não envia uma resposta. Caso contrário, envia 401.
+        if (onClose) return; 
         return res
           .status(401)
           .json({ message: "Token de autorização não fornecido." });
@@ -95,9 +99,13 @@ class AuthController {
         [tokenHash]
       );
 
+      // Se onClose for true, não envia uma resposta. Caso contrário, envia 200.
+      if (onClose) return; 
       return res.status(200).json({ message: "Logout realizado com sucesso" });
     } catch (error) {
       console.error("Erro no logout:", error);
+      // Se onClose for true, não envia uma resposta. Caso contrário, envia 500.
+      if (onClose) return;
       return res.status(500).json({ error: "Erro interno do servidor" });
     }
   }

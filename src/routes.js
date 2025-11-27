@@ -66,6 +66,9 @@ routes.get('/api/usuarios/:id', AuthController.getUserDetails);
 // 🔹 Detalhes do usuário atual
 routes.get('/api/auth/user-details', authMiddleware, AuthController.getCurrentUserDetails);
 
+// 🔹 Assinaturas do usuário atual
+routes.get('/api/auth/my-subscriptions', authMiddleware, ContasController.getSubscriptions);
+
 // 🔹 Pagamentos
 routes.post('/api/payments/initiate', authMiddleware, PaymentController.initiatePayment);
 routes.post('/api/payments/qr-code', authMiddleware, PaymentController.generateQrCode);
