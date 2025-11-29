@@ -5,7 +5,8 @@ class PlanosController {
   async create(req, res) {
     try {
       console.log("Recebido POST /api/admin/planos. Body:", req.body);
-      const { nome, periodo, preco, duracaoDias, beneficios } = req.body;
+      let { nome, periodo, preco, duracaoDias, beneficios } = req.body;
+      preco = parseFloat(preco.replace(",", ".")); // Convert '89,99' to 89.99
 
       if (
         !nome ||
@@ -126,7 +127,8 @@ class PlanosController {
   async update(req, res) {
     try {
       const { id } = req.params;
-      const { nome, periodo, preco, duracaoDias, beneficios } = req.body;
+      let { nome, periodo, preco, duracaoDias, beneficios } = req.body;
+      preco = parseFloat(preco.replace(",", ".")); // Convert '89,99' to 89.99
 
       await pool.execute(
         `UPDATE planos 
