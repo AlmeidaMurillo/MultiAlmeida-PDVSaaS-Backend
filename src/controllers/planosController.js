@@ -75,6 +75,27 @@ class PlanosController {
     }
   }
 
+  async listAdmin(req, res) {
+    try {
+      const [rows] = await pool.execute(
+        'SELECT id, nome, periodo, preco, duracao_dias, beneficios, quantidade_empresas FROM planos ORDER BY nome ASC, FIELD(periodo, "mensal", "trimestral", "semestral", "anual")'
+      );
+
+      const planos = rows.map(plano => ({
+        ...plano,
+        preco: parseFloat(plano.preco),
+        beneficios: typeof plano.beneficios === "string"
+          ? JSON.parse(plano.beneficios)
+          : plano.beneficios,
+      }));
+
+      return res.json({ planos });
+    } catch (err) {
+      console.error("Erro listando planos para admin:", err);
+      return res.status(500).json({ error: "Erro interno" });
+    }
+  }
+
   async get(req, res) {
     try {
       const { id } = req.params;

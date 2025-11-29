@@ -68,7 +68,7 @@ routes.get('/api/planos', PlanosController.list);
 
 
 routes.post('/api/admin/planos', authMiddleware, requireAdmin, PlanosController.create);
-routes.get('/api/admin/planos', authMiddleware, requireAdmin, PlanosController.list);
+routes.get('/api/admin/planos', authMiddleware, requireAdmin, PlanosController.listAdmin);
 routes.put('/api/admin/planos/:id', authMiddleware, requireAdmin, PlanosController.update);
 routes.delete('/api/admin/planos/:id', authMiddleware, requireAdmin, PlanosController.delete);
 
