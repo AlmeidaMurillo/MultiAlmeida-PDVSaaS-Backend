@@ -4,6 +4,7 @@ import pool from "../db.js";
 class PlanosController {
   async create(req, res) {
     try {
+      console.log("Recebido POST /api/admin/planos. Body:", req.body);
       const { nome, periodo, preco, duracaoDias, beneficios } = req.body;
 
       if (
@@ -14,6 +15,7 @@ class PlanosController {
         !beneficios ||
         beneficios.length === 0
       ) {
+        console.error("Validação falhou para POST /api/admin/planos:", req.body);
         return res.status(400).json({
           error: "Nome, período, preço, duração e benefícios são obrigatórios",
         });
@@ -36,6 +38,7 @@ class PlanosController {
       });
     } catch (err) {
       console.error("Erro criando plano:", err);
+      console.error("Detalhes do erro:", err.message, err.stack);
       return res.status(500).json({ error: "Erro interno", details: err });
     }
   }
