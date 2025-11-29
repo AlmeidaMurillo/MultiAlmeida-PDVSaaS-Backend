@@ -30,7 +30,7 @@ const setRefreshTokenCookie = (res, token) => {
   const options = {
     httpOnly: true,
     secure: NODE_ENV === 'production',
-    sameSite: 'strict',
+    sameSite: NODE_ENV === 'production' ? 'none' : 'lax',
     path: '/api/auth', 
     expires: new Date(Date.now() + REFRESH_TOKEN_EXPIRES_IN_DAYS * 24 * 60 * 60 * 1000),
   };
