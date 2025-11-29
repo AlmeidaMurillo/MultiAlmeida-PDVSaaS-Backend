@@ -10,7 +10,7 @@ const client = new MercadoPagoConfig({
 });
 
 class PaymentController {
-  // 💰 Gerar QR Code PIX
+  
   async generateQrCode(req, res) {
     const { amount, description } = req.body;
 
@@ -52,7 +52,7 @@ class PaymentController {
     }
   }
 
-  // 🔔 Webhook de retorno do MP
+  
   async handleWebhook(req, res) {
     let paymentId;
     let notificationType;
@@ -139,7 +139,7 @@ class PaymentController {
           [duracao_dias, assinatura_id]
         );
 
-        // Limpar o carrinho do usuário
+        
         const [assinaturaRows] = await connection.execute(
           "SELECT usuario_id FROM assinaturas WHERE id = ?",
           [assinatura_id]
@@ -173,7 +173,7 @@ class PaymentController {
     }
   }
 
-  // 🔎 Buscar status do pagamento
+  
   async getPaymentStatus(req, res) {
     try {
       const { id } = req.params;
@@ -194,7 +194,7 @@ class PaymentController {
     }
   }
 
-  // 📋 Detalhes do pagamento
+  
   async getPaymentDetails(req, res) {
     try {
       const { id } = req.params;
@@ -245,7 +245,7 @@ class PaymentController {
     }
   }
 
-  // ⏰ Expirar pagamento manualmente
+  
   async expirePayment(req, res) {
     const { id } = req.params;
     const connection = await pool.getConnection();
@@ -291,14 +291,14 @@ class PaymentController {
     }
   }
 
-  // 🚀 Iniciar pagamento PIX (corrigido)
+  
   async initiatePayment(req, res) {
     const usuarioId = req.user.id;
     const connection = await pool.getConnection();
     await connection.beginTransaction();
 
     try {
-      // Buscar item do carrinho
+      
       const [cartItems] = await connection.execute(
         "SELECT plano_id, periodo FROM carrinho_usuarios WHERE usuario_id = ?",
         [usuarioId]
@@ -323,7 +323,7 @@ class PaymentController {
 
       const plano = planRows[0];
 
-      // Corrigir preço (vírgula para ponto)
+      
       const preco = Number(plano.preco.toString().replace(",", "."));
 
       const assinaturaId = uuidv4();

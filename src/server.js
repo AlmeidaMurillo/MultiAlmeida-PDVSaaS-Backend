@@ -23,12 +23,12 @@ const startServer = async () => {
   try {
     await setupDatabase();
     
-    // Inicia o servidor
+    
     app.listen(port, () => {
       console.log(`🚀 Servidor rodando na porta ${port}`);
-      // Agenda a limpeza de sessões a cada 5 minutos
+      
       setInterval(cleanupExpiredSessions, 5 * 60 * 1000);
-      // Executa a limpeza uma vez na inicialização
+      
       cleanupExpiredSessions();
     });
   } catch (error) {

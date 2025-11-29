@@ -2,7 +2,7 @@ import pool from "../db.js";
 import { v4 as uuidv4 } from "uuid";
 
 class CarrinhoController {
-  // Listar itens do carrinho do usuário
+  
   async listar(req, res) {
     try {
       const usuarioId = req.user.id;
@@ -22,7 +22,7 @@ class CarrinhoController {
     }
   }
 
-  // Adicionar item ao carrinho
+  
   async adicionar(req, res) {
     const maxRetries = 3;
     let retries = 0;
@@ -32,6 +32,11 @@ class CarrinhoController {
       try {
         await connection.beginTransaction();
 
+        if (!req.user || !req.user.id) {
+          await connection.rollback();
+          return res.status(401).json({ error: "Usuário não autenticado." });
+        }
+
         const usuarioId = req.user.id;
         const { planoId, periodo, quantidade = 1 } = req.body;
 
@@ -40,7 +45,7 @@ class CarrinhoController {
           return res.status(400).json({ error: "Plano e período são obrigatórios" });
         }
 
-        // Verificar se o plano existe
+        
         const [planos] = await connection.execute(
           "SELECT id FROM planos WHERE id = ? AND periodo = ?",
           [planoId, periodo]
@@ -51,10 +56,10 @@ class CarrinhoController {
           return res.status(404).json({ error: "Plano não encontrado" });
         }
 
-        // Limpar carrinho antes de adicionar novo item (limitação de 1 plano por compra)
+        
         await connection.execute("DELETE FROM carrinho_usuarios WHERE usuario_id = ?", [usuarioId]);
 
-        // Inserir novo item
+        
         const id = uuidv4();
         await connection.execute(
           "INSERT INTO carrinho_usuarios (id, usuario_id, plano_id, periodo, quantidade) VALUES (?, ?, ?, ?, ?)",
@@ -63,13 +68,13 @@ class CarrinhoController {
 
         await connection.commit();
         res.json({ message: "Item adicionado ao carrinho" });
-        return; // Success, exit the loop
+        return; 
       } catch (error) {
         await connection.rollback();
         if (error.code === 'ER_LOCK_DEADLOCK' && retries < maxRetries - 1) {
           retries++;
           console.log(`Deadlock detected, retrying... (${retries}/${maxRetries})`);
-          await new Promise(resolve => setTimeout(resolve, 100)); // Wait 100ms before retry
+          await new Promise(resolve => setTimeout(resolve, 100)); 
           continue;
         }
         console.error("Erro ao adicionar ao carrinho:", error);
@@ -81,7 +86,7 @@ class CarrinhoController {
     }
   }
 
-  // Remover item do carrinho
+  
   async remover(req, res) {
     try {
       const usuarioId = req.user.id;
@@ -103,7 +108,7 @@ class CarrinhoController {
     }
   }
 
-  // Limpar carrinho
+  
   async limpar(req, res) {
     try {
       const usuarioId = req.user.id;
@@ -117,7 +122,7 @@ class CarrinhoController {
     }
   }
 
-  // Atualizar quantidade
+  
   async atualizarQuantidade(req, res) {
     try {
       const usuarioId = req.user.id;

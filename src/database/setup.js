@@ -2,8 +2,7 @@ import pool from "../db.js";
 import { v4 as uuidv4 } from "uuid";
 import bcrypt from "bcryptjs";
 
-// Função segura para configurar o banco de dados.
-// Não apaga tabelas, apenas cria se não existirem.
+
 async function setupDatabase() {
   try {
     console.log("Verificando a estrutura do banco de dados...");
@@ -138,7 +137,7 @@ async function setupDatabase() {
             )
         `);
 
-    // Cria usuário admin padrão, se não existir
+    
     const [users] = await pool.execute(
       "SELECT * FROM usuarios WHERE email = 'admin@multialmeida.com'"
     );
@@ -152,7 +151,7 @@ async function setupDatabase() {
       );
     }
 
-    // Cria planos padrão, se não existirem
+    
     const [planosExistentes] = await pool.execute(
       "SELECT * FROM planos LIMIT 1"
     );
@@ -167,7 +166,7 @@ async function setupDatabase() {
           beneficios: '["1 usuário", "Relatório simples"]',
           quantidade_empresas: 1,
         },
-        // ... (todos os outros planos)
+        
         {
           nome: "Premium",
           periodo: "anual",

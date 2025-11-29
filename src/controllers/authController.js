@@ -5,7 +5,7 @@ import pool from '../db.js';
 import { v4 as uuidv4 } from 'uuid';
 import crypto from 'crypto';
 
-// --- Variáveis de Ambiente ---
+
 const ACCESS_TOKEN_SECRET = process.env.ACCESS_TOKEN_SECRET;
 const ACCESS_TOKEN_EXPIRES_IN = process.env.ACCESS_TOKEN_EXPIRES_IN || '15m';
 const REFRESH_TOKEN_EXPIRES_IN_DAYS = parseInt(process.env.REFRESH_TOKEN_EXPIRES_IN_DAYS || '7', 10);
@@ -15,11 +15,8 @@ if (!ACCESS_TOKEN_SECRET) {
   throw new Error('ACCESS_TOKEN_SECRET não definido nas variáveis de ambiente');
 }
 
-// --- Funções Auxiliares ---
 
-/**
- * Gera um Access Token JWT.
- */
+
 const generateAccessToken = (user) => {
   return jwt.sign(
     { id: user.id, nome: user.nome, email: user.email, papel: user.papel },
@@ -28,21 +25,19 @@ const generateAccessToken = (user) => {
   );
 };
 
-/**
- * Define o cookie do Refresh Token na resposta.
- */
+
 const setRefreshTokenCookie = (res, token) => {
   const options = {
     httpOnly: true,
     secure: NODE_ENV === 'production',
     sameSite: 'strict',
-    path: '/api/auth', // O cookie só será enviado para rotas de autenticação
+    path: '/api/auth', 
     expires: new Date(Date.now() + REFRESH_TOKEN_EXPIRES_IN_DAYS * 24 * 60 * 60 * 1000),
   };
   res.cookie('refreshToken', token, options);
 };
 
-// --- Classe do Controlador ---
+
 
 class AuthController {
   async login(req, res) {
@@ -54,7 +49,7 @@ class AuthController {
     const { email, senha } = req.body;
 
     try {
-      // 1. Validar credenciais do usuário
+      
       const [userRows] = await pool.execute(
         'SELECT id, nome, email, senha, papel FROM usuarios WHERE email = ?',
         [email]
@@ -69,17 +64,17 @@ class AuthController {
         return res.status(401).json({ error: 'Email ou senha incorretos' });
       }
 
-      // 2. Gerar Access Token
+      
       const accessToken = generateAccessToken(usuario);
 
-      // 3. Gerar e Hashear Refresh Token
+      
       const refreshToken = crypto.randomBytes(40).toString('hex');
       const refreshTokenHash = await bcrypt.hash(refreshToken, 10);
       const refreshTokenExpires = new Date(
         Date.now() + REFRESH_TOKEN_EXPIRES_IN_DAYS * 24 * 60 * 60 * 1000
       );
 
-      // 4. Salvar sessão no banco (usando a tabela sessoes_usuarios)
+      
       await pool.execute(
         `INSERT INTO sessoes_usuarios 
          (id, usuario_id, hash_token, expira_em, info_dispositivo, info_navegador, endereco_ip, papel, esta_ativo) 
@@ -96,7 +91,7 @@ class AuthController {
         ]
       );
 
-      // 5. Enviar tokens
+      
       setRefreshTokenCookie(res, refreshToken);
 
       return res.json({
@@ -111,14 +106,14 @@ class AuthController {
   }
 
   async refresh(req, res) {
-    // 1. Obter o refresh token do cookie
+    
     const { refreshToken } = req.cookies;
     if (!refreshToken) {
       return res.status(401).json({ error: 'Refresh token não fornecido.' });
     }
 
     try {
-      // 2. Encontrar todas as sessões ativas do usuário
+      
       const [sessions] = await pool.execute(
         'SELECT id, usuario_id, hash_token, expira_em FROM sessoes_usuarios WHERE esta_ativo = TRUE AND expira_em > NOW()'
       );
@@ -136,7 +131,7 @@ class AuthController {
         return res.status(403).json({ error: 'Refresh token inválido ou expirado.' });
       }
 
-      // 3. (Rotação) Gerar novo refresh token e atualizar no banco
+      
       const newRefreshToken = crypto.randomBytes(40).toString('hex');
       const newRefreshTokenHash = await bcrypt.hash(newRefreshToken, 10);
       const newRefreshTokenExpires = new Date(
@@ -148,14 +143,14 @@ class AuthController {
         [newRefreshTokenHash, newRefreshTokenExpires, validSession.id]
       );
       
-      // 4. Gerar novo access token
+      
       const [userRows] = await pool.execute('SELECT id, nome, email, papel FROM usuarios WHERE id = ?', [validSession.usuario_id]);
       if (userRows.length === 0) {
         return res.status(404).json({ error: 'Usuário não encontrado.' });
       }
       const accessToken = generateAccessToken(userRows[0]);
       
-      // 5. Enviar novos tokens
+      
       setRefreshTokenCookie(res, newRefreshToken);
       return res.json({ accessToken });
 
@@ -168,11 +163,11 @@ class AuthController {
   async logout(req, res) {
     const { refreshToken } = req.cookies;
     if (!refreshToken) {
-      return res.status(204).send(); // Nenhuma ação necessária se não há token
+      return res.status(204).send(); 
     }
 
     try {
-       // Precisamos encontrar o hash correspondente para invalidá-lo
+       
        const [sessions] = await pool.execute(
         'SELECT id, hash_token FROM sessoes_usuarios WHERE esta_ativo = TRUE AND expira_em > NOW()'
       );
@@ -192,15 +187,15 @@ class AuthController {
 
     } catch (error) {
       console.error('Erro no logout:', error);
-      // Não bloqueie o logout do cliente por um erro de servidor
+      
     } finally {
-      // Sempre limpe o cookie do cliente
+      
       res.clearCookie('refreshToken', { httpOnly: true, secure: NODE_ENV === 'production', sameSite: 'strict', path: '/api/auth' });
       res.status(204).send();
     }
   }
 
-// ... (outros métodos como checkAuthStatus, getUserDetails, etc. podem permanecer aqui)
+
   async checkAdminAuthStatus(req, res) {
     try {
       if (req.user?.papel !== "admin") {
@@ -244,7 +239,7 @@ class AuthController {
         });
       }
 
-      // A verificação de assinatura permanece a mesma
+      
       if (userPapel === 'usuario') {
         const [assinaturaAtivaRows] = await pool.execute(
           'SELECT 1 FROM assinaturas WHERE usuario_id = ? AND status = "ativa" AND data_vencimento > NOW() LIMIT 1',

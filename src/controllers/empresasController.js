@@ -2,7 +2,7 @@ import { v4 as uuidv4 } from "uuid";
 import pool from "../db.js";
 
 class EmpresasController {
-  // 📋 Listar todas as empresas
+  
   async list(req, res) {
     try {
       const [rows] = await pool.execute(`
@@ -26,7 +26,7 @@ class EmpresasController {
     }
   }
 
-  // 🔍 Buscar uma empresa específica
+  
   async get(req, res) {
     try {
       const { id } = req.params;
@@ -46,7 +46,7 @@ class EmpresasController {
     }
   }
 
-  // 🏢 Criar uma nova empresa
+  
   async create(req, res) {
     try {
       const { nome, email, cnpj, telefone, periodo, plano, status } = req.body;

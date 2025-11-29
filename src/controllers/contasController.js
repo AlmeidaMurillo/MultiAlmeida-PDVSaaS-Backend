@@ -5,7 +5,7 @@ import pool from '../db.js';
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 
-// --- Variáveis de Ambiente ---
+
 const ACCESS_TOKEN_SECRET = process.env.ACCESS_TOKEN_SECRET;
 const ACCESS_TOKEN_EXPIRES_IN = process.env.ACCESS_TOKEN_EXPIRES_IN || '15m';
 const REFRESH_TOKEN_EXPIRES_IN_DAYS = parseInt(process.env.REFRESH_TOKEN_EXPIRES_IN_DAYS || '7', 10);
@@ -15,7 +15,7 @@ if (!ACCESS_TOKEN_SECRET) {
   throw new Error("ACCESS_TOKEN_SECRET não definido nas variáveis de ambiente");
 }
 
-// --- Funções Auxiliares (Duplicadas de authController para consistência) ---
+
 
 const generateAccessToken = (user) => {
   return jwt.sign(
@@ -82,7 +82,7 @@ class ContasController {
         return res.status(409).json({ error: "Email já cadastrado" });
       }
 
-      // 1. Criar usuário
+      
       const usuarioId = uuidv4();
       const senhaHash = await bcrypt.hash(senha, 10);
       const papel = "usuario";
@@ -94,17 +94,17 @@ class ContasController {
       
       const usuario = { id: usuarioId, nome, email, papel };
 
-      // 2. Gerar Access Token
+      
       const accessToken = generateAccessToken(usuario);
 
-      // 3. Gerar e Hashear Refresh Token
+      
       const refreshToken = crypto.randomBytes(40).toString('hex');
       const refreshTokenHash = await bcrypt.hash(refreshToken, 10);
       const refreshTokenExpires = new Date(
         Date.now() + REFRESH_TOKEN_EXPIRES_IN_DAYS * 24 * 60 * 60 * 1000
       );
 
-      // 4. Salvar sessão no banco
+      
       await pool.execute(
         `INSERT INTO sessoes_usuarios 
          (id, usuario_id, hash_token, expira_em, info_dispositivo, info_navegador, endereco_ip, papel, esta_ativo) 
@@ -121,7 +121,7 @@ class ContasController {
         ]
       );
 
-      // 5. Enviar tokens
+      
       setRefreshTokenCookie(res, refreshToken);
       
       return res.status(201).json({

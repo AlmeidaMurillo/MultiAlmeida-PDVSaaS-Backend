@@ -42,7 +42,6 @@ const limiter = rateLimit({
   legacyHeaders: false,
 });
 
-// app.use(['/api/login', '/api/criar-conta'], limiter); // Temporariamente desabilitado para desenvolvimento
 
 const cache = apicache.middleware;
 app.use('/api/planos', cache('60 seconds'));
