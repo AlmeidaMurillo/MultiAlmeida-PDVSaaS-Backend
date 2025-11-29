@@ -162,6 +162,7 @@ class AuthController {
 
   async logout(req, res) {
     const { refreshToken } = req.cookies;
+    console.log('Logout attempt with refreshToken:', refreshToken ? 'found' : 'missing');
     if (!refreshToken) {
       return res.status(204).send(); 
     }
@@ -171,18 +172,23 @@ class AuthController {
        const [sessions] = await pool.execute(
         'SELECT id, hash_token FROM sessoes_usuarios WHERE esta_ativo = TRUE AND expira_em > NOW()'
       );
+      console.log(`Found ${sessions.length} active sessions to check.`);
 
       let sessionIdToDeactivate = null;
       for (const session of sessions) {
         const isValid = await bcrypt.compare(refreshToken, session.hash_token);
         if (isValid) {
           sessionIdToDeactivate = session.id;
+          console.log(`Match found! Session ID to deactivate: ${sessionIdToDeactivate}`);
           break;
         }
       }
 
       if (sessionIdToDeactivate) {
         await pool.execute('UPDATE sessoes_usuarios SET esta_ativo = FALSE WHERE id = ?', [sessionIdToDeactivate]);
+        console.log(`Session ${sessionIdToDeactivate} deactivated.`);
+      } else {
+        console.log('No matching session found for the provided refresh token.');
       }
 
     } catch (error) {
