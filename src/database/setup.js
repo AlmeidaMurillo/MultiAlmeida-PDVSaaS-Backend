@@ -57,6 +57,8 @@ async function setupDatabase() {
             )
         `);
 
+    await pool.execute(`ALTER TABLE sessoes_usuarios MODIFY COLUMN endereco_ip VARCHAR(255)`);
+
     await pool.execute(`
             CREATE TABLE IF NOT EXISTS planos (
                 id VARCHAR(36) PRIMARY KEY,
