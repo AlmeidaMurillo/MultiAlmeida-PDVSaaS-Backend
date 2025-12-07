@@ -285,7 +285,7 @@ class AuthController {
       }
 
       const [userRows] = await pool.execute(
-        "SELECT id, nome, email, papel FROM usuarios WHERE id = ?",
+        "SELECT id, nome, email, papel, telefone, cpf, empresa_id, fotoPerfil FROM usuarios WHERE id = ?",
         [userId]
       );
 
@@ -294,7 +294,46 @@ class AuthController {
       }
 
       const usuario = userRows[0];
-      return res.status(200).json(usuario);
+      
+      // Buscar informações da empresa se houver
+      let empresa = null;
+      if (usuario.empresa_id) {
+        const [empresaRows] = await pool.execute(
+          "SELECT id, nome, cnpj, endereco FROM empresas WHERE id = ?",
+          [usuario.empresa_id]
+        );
+        if (empresaRows.length > 0) {
+          empresa = empresaRows[0];
+        }
+      }
+
+      // Buscar assinaturas do usuário
+      const [assinaturasRows] = await pool.execute(
+        "SELECT id, plano_id, status, data_vencimento FROM assinaturas WHERE usuario_id = ? ORDER BY data_vencimento DESC",
+        [userId]
+      );
+
+      // Enriquecer assinaturas com dados do plano
+      let assinaturas = [];
+      if (assinaturasRows.length > 0) {
+        for (const assinatura of assinaturasRows) {
+          const [planoRows] = await pool.execute(
+            "SELECT id, nome FROM planos WHERE id = ?",
+            [assinatura.plano_id]
+          );
+          assinaturas.push({
+            ...assinatura,
+            plano_nome: planoRows.length > 0 ? planoRows[0].nome : "Plano Desconhecido"
+          });
+        }
+      }
+
+      return res.status(200).json({
+        ...usuario,
+        empresa,
+        assinaturas,
+        papel: usuario.papel
+      });
     } catch (error) {
       console.error(
         "Erro inesperado ao buscar detalhes do usuário atual:",
@@ -322,18 +361,48 @@ class AuthController {
       // Atualizar dados do usuário
       await pool.execute(
         "UPDATE usuarios SET nome = ?, email = ?, telefone = ?, cpf = ? WHERE id = ?",
-        [nome, email, telefone, cpf, userId]
+        [nome || usuario.nome, email || usuario.email, telefone || usuario.telefone, cpf || usuario.cpf, userId]
       );
 
       // Atualizar dados da empresa, se houver
       if (usuario.empresa_id && empresa) {
         await pool.execute(
           "UPDATE empresas SET nome = ?, cnpj = ?, endereco = ? WHERE id = ?",
-          [empresa.nome, empresa.cnpj, empresa.endereco, usuario.empresa_id]
+          [empresa.nome || '', empresa.cnpj || '', empresa.endereco || '', usuario.empresa_id]
         );
       }
 
-      res.status(200).json({ message: "Dados atualizados com sucesso." });
+      // Retornar os dados atualizados
+      const [updatedUserRows] = await pool.execute(
+        "SELECT id, nome, email, papel, telefone, cpf, empresa_id, fotoPerfil FROM usuarios WHERE id = ?",
+        [userId]
+      );
+
+      if (!updatedUserRows || updatedUserRows.length === 0) {
+        return res.status(404).json({ message: "Usuário não encontrado após atualização." });
+      }
+
+      const usuarioAtualizado = updatedUserRows[0];
+      
+      // Buscar informações da empresa se houver
+      let empresaAtualizada = null;
+      if (usuarioAtualizado.empresa_id) {
+        const [empresaRows] = await pool.execute(
+          "SELECT id, nome, cnpj, endereco FROM empresas WHERE id = ?",
+          [usuarioAtualizado.empresa_id]
+        );
+        if (empresaRows.length > 0) {
+          empresaAtualizada = empresaRows[0];
+        }
+      }
+
+      res.status(200).json({ 
+        message: "Dados atualizados com sucesso.",
+        usuario: {
+          ...usuarioAtualizado,
+          empresa: empresaAtualizada
+        }
+      });
     } catch (error) {
       console.error("Erro ao atualizar os dados do usuário:", error);
       res.status(500).json({ error: "Erro interno do servidor." });
