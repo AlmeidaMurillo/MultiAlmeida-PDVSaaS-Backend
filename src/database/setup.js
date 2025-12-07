@@ -49,15 +49,13 @@ async function setupDatabase() {
                 expira_em DATETIME NOT NULL,
                 info_dispositivo VARCHAR(255),
                 info_navegador VARCHAR(255),
-                endereco_ip VARCHAR(45),
+                endereco_ip VARCHAR(255),
                 ultimo_acesso TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 esta_ativo BOOLEAN NOT NULL DEFAULT TRUE,
                 papel VARCHAR(50) NOT NULL,
                 FOREIGN KEY (usuario_id) REFERENCES usuarios(id) ON DELETE CASCADE
             )
         `);
-
-    await pool.execute(`ALTER TABLE sessoes_usuarios MODIFY COLUMN endereco_ip VARCHAR(255)`);
 
     await pool.execute(`
             CREATE TABLE IF NOT EXISTS planos (

@@ -303,6 +303,42 @@ class AuthController {
       return res.status(500).json({ error: "Erro inesperado no servidor" });
     }
   }
+
+  async updateCurrentUserDetails(req, res) {
+    try {
+      const userId = req.user?.id;
+      if (!userId) {
+        return res.status(401).json({ message: "Usuário não autenticado." });
+      }
+
+      const { nome, email, telefone, cpf, empresa } = req.body;
+
+      const [userRows] = await pool.execute("SELECT * FROM usuarios WHERE id = ?", [userId]);
+      if (userRows.length === 0) {
+        return res.status(404).json({ message: "Usuário não encontrado." });
+      }
+      const usuario = userRows[0];
+
+      // Atualizar dados do usuário
+      await pool.execute(
+        "UPDATE usuarios SET nome = ?, email = ?, telefone = ?, cpf = ? WHERE id = ?",
+        [nome, email, telefone, cpf, userId]
+      );
+
+      // Atualizar dados da empresa, se houver
+      if (usuario.empresa_id && empresa) {
+        await pool.execute(
+          "UPDATE empresas SET nome = ?, cnpj = ?, endereco = ? WHERE id = ?",
+          [empresa.nome, empresa.cnpj, empresa.endereco, usuario.empresa_id]
+        );
+      }
+
+      res.status(200).json({ message: "Dados atualizados com sucesso." });
+    } catch (error) {
+      console.error("Erro ao atualizar os dados do usuário:", error);
+      res.status(500).json({ error: "Erro interno do servidor." });
+    }
+  }
 }
 
 export default new AuthController();
