@@ -294,7 +294,33 @@ class AuthController {
       }
 
       const usuario = userRows[0];
-      return res.status(200).json(usuario);
+
+      // Buscar assinaturas do usuário com detalhes do plano
+      const [assinaturasRows] = await pool.execute(
+        `SELECT 
+          a.id,
+          a.plano_id,
+          a.status,
+          a.data_assinatura,
+          a.data_vencimento,
+          a.criado_em,
+          p.nome as plano_nome,
+          p.periodo,
+          p.preco,
+          p.duracao_dias,
+          p.beneficios,
+          p.quantidade_empresas
+        FROM assinaturas a
+        LEFT JOIN planos p ON a.plano_id = p.id
+        WHERE a.usuario_id = ?
+        ORDER BY a.data_vencimento DESC`,
+        [userId]
+      );
+
+      return res.status(200).json({
+        ...usuario,
+        assinaturas: assinaturasRows || []
+      });
     } catch (error) {
       console.error(
         "Erro inesperado ao buscar detalhes do usuário atual:",
