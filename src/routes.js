@@ -25,6 +25,7 @@ authRoutes.post('/logout', AuthController.logout);
 authRoutes.get('/status', authMiddleware, AuthController.checkAuthStatus);
 authRoutes.get('/user-details', authMiddleware, AuthController.getCurrentUserDetails);
 authRoutes.put('/user-details', authMiddleware, AuthController.updateCurrentUserDetails);
+authRoutes.put('/change-password', authMiddleware, AuthController.changePassword);
 authRoutes.get('/my-subscriptions', authMiddleware, ContasController.getSubscriptions); 
 routes.use('/api/auth', authRoutes);
 

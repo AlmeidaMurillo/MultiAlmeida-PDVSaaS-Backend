@@ -365,6 +365,54 @@ class AuthController {
       res.status(500).json({ error: "Erro interno do servidor." });
     }
   }
+
+  async changePassword(req, res) {
+    try {
+      const userId = req.user?.id;
+      if (!userId) {
+        return res.status(401).json({ message: "Usuário não autenticado" });
+      }
+
+      const { senhaAtual, novaSenha } = req.body;
+
+      if (!senhaAtual || !novaSenha) {
+        return res.status(400).json({ message: "Senha atual e nova senha são obrigatórias" });
+      }
+
+      // Buscar usuário para verificar senha atual
+      const [userRows] = await pool.execute("SELECT senha FROM usuarios WHERE id = ?", [userId]);
+
+      if (!userRows || userRows.length === 0) {
+        return res.status(404).json({ message: "Usuário não encontrado" });
+      }
+
+      const usuario = userRows[0];
+      const bcrypt = require('bcryptjs');
+      const senhaValida = await bcrypt.compare(senhaAtual, usuario.senha);
+
+      if (!senhaValida) {
+        return res.status(401).json({ message: "Senha atual incorreta" });
+      }
+
+      // Hash da nova senha
+      const novaSenhaHash = await bcrypt.hash(novaSenha, 10);
+
+      // Atualizar senha
+      await pool.execute("UPDATE usuarios SET senha = ? WHERE id = ?", [novaSenhaHash, userId]);
+
+      return res.status(200).json({ message: "Senha alterada com sucesso" });
+    } catch (error) {
+      console.error("Erro ao alterar senha:", error);
+      return res.status(500).json({ error: "Erro ao alterar senha" });
+    }
+  }
+
+      return res.status(200).json({ message: "Senha alterada com sucesso" });
+    } catch (error) {
+      console.error("Erro ao alterar senha:", error);
+      return res.status(500).json({ error: "Erro ao alterar senha" });
+    }
+  }
 }
 
 export default new AuthController();
