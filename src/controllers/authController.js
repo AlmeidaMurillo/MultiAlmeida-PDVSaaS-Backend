@@ -37,6 +37,17 @@ const setRefreshTokenCookie = (res, token) => {
   res.cookie('refreshToken', token, options);
 };
 
+const setAccessTokenCookie = (res, token) => {
+  const options = {
+    httpOnly: true,
+    secure: NODE_ENV === 'production',
+    sameSite: NODE_ENV === 'production' ? 'none' : 'lax',
+    path: '/',
+  };
+  res.cookie('accessToken', token, options);
+};
+
+
 
 
 class AuthController {
