@@ -7,7 +7,7 @@ import crypto from 'crypto';
 
 
 const ACCESS_TOKEN_SECRET = process.env.ACCESS_TOKEN_SECRET;
-const ACCESS_TOKEN_EXPIRES_IN = process.env.ACCESS_TOKEN_EXPIRES_IN || '15m';
+const ACCESS_TOKEN_EXPIRATION = process.env.ACCESS_TOKEN_EXPIRATION || '2h';
 const REFRESH_TOKEN_EXPIRES_IN_DAYS = parseInt(process.env.REFRESH_TOKEN_EXPIRES_IN_DAYS || '7', 10);
 const NODE_ENV = process.env.NODE_ENV;
 
@@ -21,7 +21,7 @@ const generateAccessToken = (user) => {
   return jwt.sign(
     { id: user.id, nome: user.nome, email: user.email, papel: user.papel },
     ACCESS_TOKEN_SECRET,
-    { expiresIn: ACCESS_TOKEN_EXPIRES_IN }
+    { expiresIn: ACCESS_TOKEN_EXPIRATION }
   );
 };
 
@@ -93,6 +93,7 @@ class AuthController {
 
       
       setRefreshTokenCookie(res, refreshToken);
+      setAccessTokenCookie(res, accessToken);
 
       return res.json({
         accessToken,
@@ -152,6 +153,7 @@ class AuthController {
       
       
       setRefreshTokenCookie(res, newRefreshToken);
+      setAccessTokenCookie(res, accessToken);
       return res.json({ accessToken });
 
     } catch (error) {
@@ -460,6 +462,12 @@ class AuthController {
       console.error("Erro ao alterar plano:", error);
       return res.status(500).json({ error: "Erro ao alterar plano" });
     }
+  }
+
+  async me(req, res) {
+    // Se o authMiddleware for bem-sucedido, req.user já estará populado
+    // com os dados do token. Isso é suficiente para o frontend reconstruir seu estado.
+    res.status(200).json({ user: req.user });
   }
 }
 

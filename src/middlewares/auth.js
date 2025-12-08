@@ -7,8 +7,15 @@ if (!ACCESS_TOKEN_SECRET) {
 }
 
 export async function authMiddleware(req, res, next) {
-  const authHeader = req.headers.authorization;
-  const token = authHeader && authHeader.split(' ')[1];
+  let token = null;
+  if (req.cookies && req.cookies.accessToken) {
+    token = req.cookies.accessToken;
+  } else {
+    const authHeader = req.headers.authorization;
+    if (authHeader) {
+      token = authHeader.split(' ')[1];
+    }
+  }
 
   if (!token) {
     return res.status(401).json({ error: "Token de acesso não fornecido." });
@@ -16,9 +23,25 @@ export async function authMiddleware(req, res, next) {
 
   try {
     const decoded = jwt.verify(token, ACCESS_TOKEN_SECRET);
-    req.user = decoded; // Anexa o payload do usuário (id, nome, email, papel)
+
+    const [sessionRows] = await pool.execute(
+      'SELECT 1 FROM sessoes_usuarios WHERE usuario_id = ? AND esta_ativo = TRUE',
+      [decoded.id]
+    );
+
+    if (sessionRows.length === 0) {
+      if (req.cookies && req.cookies.accessToken) {
+        res.clearCookie('accessToken');
+      }
+      return res.status(401).json({ error: 'Sessão inválida ou expirada.' });
+    }
+
+    req.user = decoded;
     next();
   } catch (err) {
+    if (req.cookies && req.cookies.accessToken) {
+      res.clearCookie('accessToken');
+    }
     if (err instanceof jwt.TokenExpiredError) {
       return res.status(401).json({ error: "Token de acesso expirado." });
     }

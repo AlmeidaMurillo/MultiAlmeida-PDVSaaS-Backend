@@ -29,6 +29,7 @@ authRoutes.put('/change-password', authMiddleware, AuthController.changePassword
 authRoutes.post('/alterar-plano', authMiddleware, AuthController.alterarPlano);
 authRoutes.get('/my-subscriptions', authMiddleware, ContasController.getSubscriptions); 
 routes.use('/api/auth', authRoutes);
+authRoutes.get('/me', authMiddleware, AuthController.me);
 
 
 routes.post(
