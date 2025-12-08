@@ -7,7 +7,7 @@ import crypto from 'crypto';
 
 
 const ACCESS_TOKEN_SECRET = process.env.ACCESS_TOKEN_SECRET;
-const ACCESS_TOKEN_EXPIRATION = process.env.ACCESS_TOKEN_EXPIRATION || '2h';
+const ACCESS_TOKEN_EXPIRES_IN = process.env.ACCESS_TOKEN_EXPIRES_IN || '2h';
 const REFRESH_TOKEN_EXPIRES_IN_DAYS = parseInt(process.env.REFRESH_TOKEN_EXPIRES_IN_DAYS || '7', 10);
 const NODE_ENV = process.env.NODE_ENV;
 
@@ -21,7 +21,7 @@ const generateAccessToken = (user) => {
   return jwt.sign(
     { id: user.id, nome: user.nome, email: user.email, papel: user.papel },
     ACCESS_TOKEN_SECRET,
-    { expiresIn: ACCESS_TOKEN_EXPIRATION }
+    { expiresIn: ACCESS_TOKEN_EXPIRES_IN }
   );
 };
 
@@ -88,8 +88,8 @@ class AuthController {
       
       await pool.execute(
         `INSERT INTO sessoes_usuarios 
-         (id, usuario_id, hash_token, expira_em, info_dispositivo, info_navegador, endereco_ip, papel, esta_ativo) 
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, TRUE)`,
+         (id, usuario_id, hash_token, expira_em, info_dispositivo, info_navegador, endereco_ip, papel) 
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           uuidv4(),
           usuario.id,
