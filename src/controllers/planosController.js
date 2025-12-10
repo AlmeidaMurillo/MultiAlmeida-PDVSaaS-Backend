@@ -4,7 +4,6 @@ import pool from "../db.js";
 class PlanosController {
   async create(req, res) {
     try {
-      console.log("Recebido POST /api/admin/planos. Body:", req.body);
       let { nome, periodo, preco, duracaoDias, beneficios } = req.body;
       preco = parseFloat(preco.replace(",", ".")); // Convert '89,99' to 89.99
 
@@ -46,46 +45,13 @@ class PlanosController {
 
   async list(req, res) {
     try {
+      const { grouped } = req.query; // Check for a 'grouped' query parameter
+
       const [rows] = await pool.execute(
         'SELECT id, nome, periodo, preco, duracao_dias, beneficios, quantidade_empresas FROM planos ORDER BY nome ASC, FIELD(periodo, "mensal", "trimestral", "semestral", "anual")'
       );
 
-      const planosAgrupados = {};
-
-      rows.forEach((plano) => {
-        if (!planosAgrupados[plano.nome]) {
-          planosAgrupados[plano.nome] = {
-            id: plano.nome,
-            nome: plano.nome,
-            empresas: plano.quantidade_empresas,
-          };
-        }
-        planosAgrupados[plano.nome][plano.periodo] = {
-          id: plano.id,
-          preco: parseFloat(plano.preco),
-          duracaoDias: plano.duracao_dias,
-          beneficios:
-            typeof plano.beneficios === "string"
-              ? JSON.parse(plano.beneficios)
-              : plano.beneficios,
-        };
-      });
-
-      const planos = Object.values(planosAgrupados);
-      return res.json({ planos });
-    } catch (err) {
-      console.error("Erro listando planos:", err);
-      return res.status(500).json({ error: "Erro interno" });
-    }
-  }
-
-  async listAdmin(req, res) {
-    try {
-      const [rows] = await pool.execute(
-        'SELECT id, nome, periodo, preco, duracao_dias, beneficios, quantidade_empresas FROM planos ORDER BY nome ASC, FIELD(periodo, "mensal", "trimestral", "semestral", "anual")'
-      );
-
-      const planos = rows.map(plano => ({
+      const parsedPlans = rows.map(plano => ({
         ...plano,
         preco: parseFloat(plano.preco),
         beneficios: typeof plano.beneficios === "string"
@@ -93,9 +59,29 @@ class PlanosController {
           : plano.beneficios,
       }));
 
-      return res.json({ planos });
+      if (grouped === 'true') {
+        const planosAgrupados = {};
+        parsedPlans.forEach((plano) => {
+          if (!planosAgrupados[plano.nome]) {
+            planosAgrupados[plano.nome] = {
+              id: plano.nome, // Use nome as ID for grouped view
+              nome: plano.nome,
+              empresas: plano.quantidade_empresas,
+            };
+          }
+          planosAgrupados[plano.nome][plano.periodo] = {
+            id: plano.id,
+            preco: plano.preco,
+            duracaoDias: plano.duracao_dias,
+            beneficios: plano.beneficios,
+          };
+        });
+        return res.json({ planos: Object.values(planosAgrupados) });
+      } else {
+        return res.json({ planos: parsedPlans });
+      }
     } catch (err) {
-      console.error("Erro listando planos para admin:", err);
+      console.error("Erro listando planos:", err);
       return res.status(500).json({ error: "Erro interno" });
     }
   }

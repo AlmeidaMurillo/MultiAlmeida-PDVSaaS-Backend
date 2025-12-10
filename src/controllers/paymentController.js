@@ -404,6 +404,41 @@ class PaymentController {
       connection.release();
     }
   }
+
+  async listAdminPayments(req, res) {
+    try {
+      const [payments] = await pool.execute(`
+        SELECT
+            pa.id,
+            pa.transaction_id AS mercadopago_id,
+            pa.valor,
+            pa.status_pagamento AS status,
+            pa.data_criacao,
+            pa.data_pagamento,
+            u.nome AS usuario_nome,
+            u.email AS usuario_email,
+            p.nome AS plano_nome,
+            e.nome AS empresa_nome
+        FROM
+            pagamentos_assinatura pa
+        JOIN
+            assinaturas a ON pa.assinatura_id = a.id
+        LEFT JOIN
+            usuarios u ON a.usuario_id = u.id
+        LEFT JOIN
+            planos p ON a.plano_id = p.id
+        LEFT JOIN
+            empresas e ON u.empresa_id = e.id
+        ORDER BY
+            pa.data_criacao DESC
+      `);
+
+      return res.status(200).json({ pagamentos: payments });
+    } catch (error) {
+      console.error("Erro ao listar pagamentos para o admin:", error);
+      return res.status(500).json({ error: "Erro interno do servidor" });
+    }
+  }
 }
 
 export default new PaymentController();

@@ -52,25 +52,6 @@ export async function authMiddleware(req, res, next) {
   }
 }
 
-// O middleware optionalAuthMiddleware é complexo e não se alinha bem com o novo fluxo.
-// A lógica do frontend com interceptors torna-o largamente desnecessário.
-// Pode ser removido ou simplificado se um caso de uso específico permanecer.
-export async function optionalAuthMiddleware(req, res, next) {
-  const authHeader = req.headers.authorization;
-  const token = authHeader && authHeader.split(' ')[1];
-
-  if (token) {
-    try {
-      const decoded = jwt.verify(token, ACCESS_TOKEN_SECRET);
-      req.user = decoded;
-    } catch (err) {
-      // Ignora o erro e continua sem usuário se o token for inválido/expirado
-    }
-  }
-  next();
-}
-
-
 // Middleware que exige ser admin
 export function requireAdmin(req, res, next) {
   if (!req.user) {

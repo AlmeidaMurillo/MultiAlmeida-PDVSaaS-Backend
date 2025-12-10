@@ -2,13 +2,15 @@ import { Router } from 'express';
 import { body } from 'express-validator';
 
 import AuthController from './controllers/authController.js';
+import UserController from './controllers/userController.js';
+import SubscriptionController from './controllers/subscriptionController.js';
 import ContasController from './controllers/contasController.js';
 import EmpresasController from './controllers/empresasController.js';
 import PaymentController from './controllers/paymentController.js';
 import PlanosController from './controllers/planosController.js';
 import CarrinhoController from './controllers/carrinhoController.js';
 
-import { authMiddleware, requireAdmin, optionalAuthMiddleware, requireSubscription } from './middlewares/auth.js';
+import { authMiddleware, requireAdmin, requireSubscription } from './middlewares/auth.js';
 
 const routes = Router();
 
@@ -23,13 +25,22 @@ authRoutes.post('/login', [
 authRoutes.post('/refresh', AuthController.refresh); 
 authRoutes.post('/logout', AuthController.logout); 
 authRoutes.get('/status', authMiddleware, AuthController.checkAuthStatus);
-authRoutes.get('/user-details', authMiddleware, AuthController.getCurrentUserDetails);
-authRoutes.put('/user-details', authMiddleware, AuthController.updateCurrentUserDetails);
-authRoutes.put('/change-password', authMiddleware, AuthController.changePassword);
-authRoutes.post('/alterar-plano', authMiddleware, AuthController.alterarPlano);
-authRoutes.get('/my-subscriptions', authMiddleware, ContasController.getSubscriptions); 
 routes.use('/api/auth', authRoutes);
-authRoutes.get('/me', authMiddleware, AuthController.me);
+
+
+const userRoutes = Router();
+userRoutes.get('/me', authMiddleware, UserController.me);
+userRoutes.get('/details', authMiddleware, UserController.getCurrentUserDetails);
+userRoutes.put('/details', authMiddleware, UserController.updateCurrentUserDetails);
+userRoutes.put('/change-password', authMiddleware, UserController.changePassword);
+userRoutes.get('/:id', authMiddleware, UserController.getUserDetails);
+routes.use('/api/user', userRoutes);
+
+
+const subscriptionRoutes = Router();
+subscriptionRoutes.post('/alterar-plano', authMiddleware, SubscriptionController.alterarPlano);
+subscriptionRoutes.get('/my-subscriptions', authMiddleware, ContasController.getSubscriptions);
+routes.use('/api/subscription', subscriptionRoutes);
 
 
 routes.post(
@@ -45,19 +56,21 @@ routes.post(
       .matches(/^(?=.*[A-Za-z])(?=.*\d)/)
       .withMessage('A senha deve conter letras e números'),
   ],
-  ContasController.criarConta
+  AuthController.criarConta
 );
 
 
-routes.get('/api/admin/auth/status', authMiddleware, requireAdmin, AuthController.checkAdminAuthStatus);
-
-
-routes.post('/api/admin/empresas', authMiddleware, requireAdmin, EmpresasController.create);
-routes.get('/api/admin/empresas', authMiddleware, requireAdmin, EmpresasController.list);
-routes.get('/api/admin/empresas/:id', authMiddleware, requireAdmin, EmpresasController.get);
-
-
-routes.get('/api/usuarios/:id', AuthController.getUserDetails);
+const adminRoutes = Router();
+adminRoutes.get('/auth/status', authMiddleware, requireAdmin, AuthController.checkAdminAuthStatus);
+adminRoutes.post('/empresas', authMiddleware, requireAdmin, EmpresasController.create);
+adminRoutes.get('/empresas', authMiddleware, requireAdmin, EmpresasController.list);
+adminRoutes.get('/empresas/:id', authMiddleware, requireAdmin, EmpresasController.get);
+adminRoutes.post('/planos', authMiddleware, requireAdmin, PlanosController.create);
+adminRoutes.get('/planos', authMiddleware, requireAdmin, PlanosController.list);
+adminRoutes.put('/planos/:id', authMiddleware, requireAdmin, PlanosController.update);
+adminRoutes.delete('/planos/:id', authMiddleware, requireAdmin, PlanosController.delete);
+adminRoutes.get('/pagamentos', authMiddleware, requireAdmin, PaymentController.listAdminPayments);
+routes.use('/api/admin', adminRoutes);
 
 
 routes.post('/api/payments/initiate', authMiddleware, PaymentController.initiatePayment);

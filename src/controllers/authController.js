@@ -17,9 +17,27 @@ if (!ACCESS_TOKEN_SECRET) {
 
 
 
-const generateAccessToken = (user) => {
+const generateAccessToken = async (user) => {
+  let companies = [];
+  if (user.papel === 'usuario') {
+    const [userCompanies] = await pool.execute(
+      `SELECT e.id AS empresa_id, e.nome AS empresa_nome
+       FROM empresas e
+       JOIN usuarios_empresas ue ON e.id = ue.empresa_id
+       WHERE ue.usuario_id = ?`,
+      [user.id]
+    );
+    companies = userCompanies;
+  }
+
   return jwt.sign(
-    { id: user.id, nome: user.nome, email: user.email, papel: user.papel },
+    { 
+      id: user.id, 
+      nome: user.nome, 
+      email: user.email, 
+      papel: user.papel,
+      empresas: companies
+    },
     ACCESS_TOKEN_SECRET,
     { expiresIn: ACCESS_TOKEN_EXPIRES_IN }
   );
@@ -50,6 +68,20 @@ const setAccessTokenCookie = (res, token) => {
 
 
 
+const findSessionByToken = async (refreshToken) => {
+  const [sessions] = await pool.execute(
+    'SELECT id, usuario_id, hash_token, expira_em FROM sessoes_usuarios WHERE esta_ativo = TRUE AND expira_em > NOW()'
+  );
+
+  for (const session of sessions) {
+    const isValid = await bcrypt.compare(refreshToken, session.hash_token);
+    if (isValid) {
+      return session;
+    }
+  }
+  return null;
+};
+
 class AuthController {
   async login(req, res) {
     const errors = validationResult(req);
@@ -60,7 +92,6 @@ class AuthController {
     const { email, senha } = req.body;
 
     try {
-      
       const [userRows] = await pool.execute(
         'SELECT id, nome, email, senha, papel FROM usuarios WHERE email = ?',
         [email]
@@ -75,18 +106,13 @@ class AuthController {
         return res.status(401).json({ error: 'Email ou senha incorretos' });
       }
 
-      
       const accessToken = generateAccessToken(usuario);
-
-      
       const refreshToken = crypto.randomBytes(40).toString('hex');
       const refreshTokenHash = await bcrypt.hash(refreshToken, 10);
       const refreshTokenExpires = new Date(
         Date.now() + REFRESH_TOKEN_EXPIRES_IN_DAYS * 24 * 60 * 60 * 1000
       );
 
-      
-      // Invalida sessoes antigas do usuario
       await pool.execute(
         'UPDATE sessoes_usuarios SET esta_ativo = FALSE WHERE usuario_id = ?',
         [usuario.id]
@@ -108,7 +134,6 @@ class AuthController {
         ]
       );
 
-      
       setRefreshTokenCookie(res, refreshToken);
       setAccessTokenCookie(res, accessToken);
 
@@ -124,32 +149,18 @@ class AuthController {
   }
 
   async refresh(req, res) {
-    
     const { refreshToken } = req.cookies;
     if (!refreshToken) {
       return res.status(401).json({ error: 'Refresh token não fornecido.' });
     }
 
     try {
-      
-      const [sessions] = await pool.execute(
-        'SELECT id, usuario_id, hash_token, expira_em FROM sessoes_usuarios WHERE esta_ativo = TRUE AND expira_em > NOW()'
-      );
-
-      let validSession = null;
-      for (const session of sessions) {
-        const isValid = await bcrypt.compare(refreshToken, session.hash_token);
-        if (isValid) {
-          validSession = session;
-          break;
-        }
-      }
+      const validSession = await findSessionByToken(refreshToken);
 
       if (!validSession) {
         return res.status(403).json({ error: 'Refresh token inválido ou expirado.' });
       }
 
-      
       const newRefreshToken = crypto.randomBytes(40).toString('hex');
       const newRefreshTokenHash = await bcrypt.hash(newRefreshToken, 10);
       const newRefreshTokenExpires = new Date(
@@ -161,13 +172,11 @@ class AuthController {
         [newRefreshTokenHash, newRefreshTokenExpires, validSession.id]
       );
       
-      
       const [userRows] = await pool.execute('SELECT id, nome, email, papel FROM usuarios WHERE id = ?', [validSession.usuario_id]);
       if (userRows.length === 0) {
         return res.status(404).json({ error: 'Usuário não encontrado.' });
       }
       const accessToken = generateAccessToken(userRows[0]);
-      
       
       setRefreshTokenCookie(res, newRefreshToken);
       setAccessTokenCookie(res, accessToken);
@@ -186,30 +195,15 @@ class AuthController {
     }
 
     try {
-       
-       const [sessions] = await pool.execute(
-        'SELECT id, hash_token FROM sessoes_usuarios WHERE esta_ativo = TRUE AND expira_em > NOW()'
-      );
+      const validSession = await findSessionByToken(refreshToken);
 
-      let sessionIdToDeactivate = null;
-      for (const session of sessions) {
-        const isValid = await bcrypt.compare(refreshToken, session.hash_token);
-        if (isValid) {
-          sessionIdToDeactivate = session.id;
-          break;
-        }
-      }
-
-      if (sessionIdToDeactivate) {
-        await pool.execute('UPDATE sessoes_usuarios SET esta_ativo = FALSE WHERE id = ?', [sessionIdToDeactivate]);
-      } else {
+      if (validSession) {
+        await pool.execute('UPDATE sessoes_usuarios SET esta_ativo = FALSE WHERE id = ?', [validSession.id]);
       }
 
     } catch (error) {
       console.error('Erro no logout:', error);
-      
     } finally {
-      
       res.clearCookie('refreshToken', { httpOnly: true, secure: NODE_ENV === 'production', sameSite: 'strict', path: '/api/auth' });
       res.status(204).send();
     }
@@ -231,22 +225,6 @@ class AuthController {
     }
   }
 
-  async getUserDetails(req, res) {
-    try {
-      const { id } = req.params;
-      const [userRows] = await pool.execute(
-        "SELECT id, nome, email, papel FROM usuarios WHERE id = ?",
-        [id]
-      );
-      if (userRows.length === 0) {
-        return res.status(404).json({ message: "Usuário não encontrado" });
-      }
-      res.status(200).json(userRows[0]);
-    } catch (error) {
-      console.error("Erro ao buscar detalhes do usuário:", error);
-      return res.status(500).json({ error: "Erro interno do servidor" });
-    }
-  }
   
   async checkAuthStatus(req, res) {
     try {
@@ -259,7 +237,6 @@ class AuthController {
         });
       }
 
-      
       if (userPapel === 'usuario') {
         const [assinaturaAtivaRows] = await pool.execute(
           'SELECT 1 FROM assinaturas WHERE usuario_id = ? AND status = "ativa" AND data_vencimento > NOW() LIMIT 1',
@@ -289,197 +266,82 @@ class AuthController {
     }
   }
 
-  async getCurrentUserDetails(req, res) {
+  async criarConta(req, res) {
     try {
-      const userId = req.user?.id;
-      if (!userId) {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
+
+      const { nome, email, senha } = req.body;
+
+      if (!nome || !email || !senha) {
         return res
-          .status(401)
-          .json({ message: "Usuário não autenticado - ID faltando" });
+          .status(400)
+          .json({ error: "Nome, email e senha são obrigatórios" });
       }
 
-      const [userRows] = await pool.execute(
-        "SELECT id, nome, email, papel FROM usuarios WHERE id = ?",
-        [userId]
+      const [existingUsers] = await pool.execute(
+        "SELECT id FROM usuarios WHERE email = ?",
+        [email]
       );
 
-      if (!userRows || userRows.length === 0) {
-        return res.status(404).json({ message: "Usuário não encontrado" });
+      if (Array.isArray(existingUsers) && existingUsers.length > 0) {
+        return res.status(409).json({ error: "Email já cadastrado" });
       }
 
-      const usuario = userRows[0];
+      
+      const usuarioId = uuidv4();
+      const senhaHash = await bcrypt.hash(senha, 10);
+      const papel = "usuario";
 
-      // Buscar assinaturas do usuário com detalhes do plano
-      const [assinaturasRows] = await pool.execute(
-        `SELECT 
-          a.id,
-          a.plano_id,
-          a.status,
-          a.data_assinatura,
-          a.data_vencimento,
-          a.criado_em,
-          p.nome as plano_nome,
-          p.periodo,
-          p.preco,
-          p.duracao_dias,
-          p.beneficios,
-          p.quantidade_empresas
-        FROM assinaturas a
-        LEFT JOIN planos p ON a.plano_id = p.id
-        WHERE a.usuario_id = ?
-        ORDER BY a.data_vencimento DESC`,
-        [userId]
-      );
-
-      return res.status(200).json({
-        ...usuario,
-        assinaturas: assinaturasRows || []
-      });
-    } catch (error) {
-      console.error(
-        "Erro inesperado ao buscar detalhes do usuário atual:",
-        error
-      );
-      return res.status(500).json({ error: "Erro inesperado no servidor" });
-    }
-  }
-
-  async updateCurrentUserDetails(req, res) {
-    try {
-      const userId = req.user?.id;
-      if (!userId) {
-        return res.status(401).json({ message: "Usuário não autenticado." });
-      }
-
-      const { nome, email, telefone, cpf, empresa } = req.body;
-
-      const [userRows] = await pool.execute("SELECT * FROM usuarios WHERE id = ?", [userId]);
-      if (userRows.length === 0) {
-        return res.status(404).json({ message: "Usuário não encontrado." });
-      }
-      const usuario = userRows[0];
-
-      // Atualizar dados do usuário
       await pool.execute(
-        "UPDATE usuarios SET nome = ?, email = ?, telefone = ?, cpf = ? WHERE id = ?",
-        [nome, email, telefone, cpf, userId]
+        "INSERT INTO usuarios (id, nome, email, senha, papel) VALUES (?, ?, ?, ?, ?)",
+        [usuarioId, nome, email, senhaHash, papel]
+      );
+      
+      const usuario = { id: usuarioId, nome, email, papel };
+
+      
+      const accessToken = generateAccessToken(usuario);
+
+      
+      const refreshToken = crypto.randomBytes(40).toString('hex');
+      const refreshTokenHash = await bcrypt.hash(refreshToken, 10);
+      const refreshTokenExpires = new Date(
+        Date.now() + REFRESH_TOKEN_EXPIRES_IN_DAYS * 24 * 60 * 60 * 1000
       );
 
-      // Atualizar dados da empresa, se houver
-      if (usuario.empresa_id && empresa) {
-        await pool.execute(
-          "UPDATE empresas SET nome = ?, cnpj = ?, endereco = ? WHERE id = ?",
-          [empresa.nome, empresa.cnpj, empresa.endereco, usuario.empresa_id]
-        );
-      }
-
-      res.status(200).json({ message: "Dados atualizados com sucesso." });
-    } catch (error) {
-      console.error("Erro ao atualizar os dados do usuário:", error);
-      res.status(500).json({ error: "Erro interno do servidor." });
-    }
-  }
-
-  async changePassword(req, res) {
-    try {
-      const userId = req.user?.id;
-      if (!userId) {
-        return res.status(401).json({ message: "Usuário não autenticado" });
-      }
-
-      const { senhaAtual, novaSenha } = req.body;
-
-      if (!senhaAtual || !novaSenha) {
-        return res.status(400).json({ message: "Senha atual e nova senha são obrigatórias" });
-      }
-
-      // Buscar usuário para verificar senha atual
-      const [userRows] = await pool.execute("SELECT senha FROM usuarios WHERE id = ?", [userId]);
-
-      if (!userRows || userRows.length === 0) {
-        return res.status(404).json({ message: "Usuário não encontrado" });
-      }
-
-      const usuario = userRows[0];
-      const bcrypt = require('bcryptjs');
-      const senhaValida = await bcrypt.compare(senhaAtual, usuario.senha);
-
-      if (!senhaValida) {
-        return res.status(401).json({ message: "Senha atual incorreta" });
-      }
-
-      // Hash da nova senha
-      const novaSenhaHash = await bcrypt.hash(novaSenha, 10);
-
-      // Atualizar senha
-      await pool.execute("UPDATE usuarios SET senha = ? WHERE id = ?", [novaSenhaHash, userId]);
-
-      return res.status(200).json({ message: "Senha alterada com sucesso" });
-    } catch (error) {
-      console.error("Erro ao alterar senha:", error);
-      return res.status(500).json({ error: "Erro ao alterar senha" });
-    }
-  }
-
-  async alterarPlano(req, res) {
-    try {
-      const userId = req.user?.id;
-      if (!userId) {
-        return res.status(401).json({ message: "Usuário não autenticado" });
-      }
-
-      const { planoId, periodo } = req.body;
-
-      if (!planoId || !periodo) {
-        return res.status(400).json({ message: "Plano e período são obrigatórios" });
-      }
-
-      // Verificar se o plano existe
-      const [planRows] = await pool.execute("SELECT * FROM planos WHERE id = ?", [planoId]);
-
-      if (!planRows || planRows.length === 0) {
-        return res.status(404).json({ message: "Plano não encontrado" });
-      }
-
-      const plano = planRows[0];
-
-      // Calcular datas de assinatura
-      const dataAssinatura = new Date().toISOString().split('T')[0];
-      const dataVencimento = new Date();
-      dataVencimento.setDate(dataVencimento.getDate() + plano.duracao_dias);
-      const dataVencimentoStr = dataVencimento.toISOString().split('T')[0];
-
-      // Verificar se já existe uma assinatura ativa
-      const [assinaturaRows] = await pool.execute(
-        "SELECT id FROM assinaturas WHERE usuario_id = ? AND status = 'ativa'",
-        [userId]
+      
+      await pool.execute(
+        `INSERT INTO sessoes_usuarios 
+         (id, usuario_id, hash_token, expira_em, info_dispositivo, info_navegador, endereco_ip, papel, esta_ativo) 
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, TRUE)`,
+        [
+          uuidv4(),
+          usuario.id,
+          refreshTokenHash,
+          refreshTokenExpires,
+          req.headers['user-agent'] || 'unknown',
+          req.headers['user-agent'] || 'unknown',
+          req.ip,
+          usuario.papel,
+        ]
       );
 
-      if (assinaturaRows && assinaturaRows.length > 0) {
-        // Atualizar assinatura existente
-        await pool.execute(
-          "UPDATE assinaturas SET plano_id = ?, data_assinatura = ?, data_vencimento = ?, status = 'ativa' WHERE usuario_id = ? AND status = 'ativa'",
-          [planoId, dataAssinatura, dataVencimentoStr, userId]
-        );
-      } else {
-        // Criar nova assinatura
-        await pool.execute(
-          "INSERT INTO assinaturas (usuario_id, plano_id, data_assinatura, data_vencimento, status) VALUES (?, ?, ?, ?, 'ativa')",
-          [userId, planoId, dataAssinatura, dataVencimentoStr]
-        );
-      }
+      
+      setRefreshTokenCookie(res, refreshToken);
+      
+      return res.status(201).json({
+        message: "Conta criada com sucesso",
+        accessToken,
+        user: { id: usuario.id, nome: usuario.nome, email: usuario.email, papel: usuario.papel },
+      });
 
-      return res.status(200).json({ message: "Plano alterado com sucesso" });
     } catch (error) {
-      console.error("Erro ao alterar plano:", error);
-      return res.status(500).json({ error: "Erro ao alterar plano" });
+      console.error("Erro ao criar conta:", error);
+      return res.status(500).json({ error: "Erro interno do servidor" });
     }
-  }
-
-  async me(req, res) {
-    // Se o authMiddleware for bem-sucedido, req.user já estará populado
-    // com os dados do token. Isso é suficiente para o frontend reconstruir seu estado.
-    res.status(200).json({ user: req.user });
   }
 }
 
