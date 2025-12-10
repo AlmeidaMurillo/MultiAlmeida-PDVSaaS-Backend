@@ -134,6 +134,9 @@ class AuthController {
         ]
       );
 
+      console.log('✅ Login bem-sucedido para:', usuario.email);
+      console.log('✅ Cookies sendo setados - refreshToken (path: /) e accessToken');
+      
       setRefreshTokenCookie(res, refreshToken);
       setAccessTokenCookie(res, accessToken);
 
@@ -150,7 +153,11 @@ class AuthController {
 
   async refresh(req, res) {
     const { refreshToken } = req.cookies;
+    console.log('🔄 Refresh endpoint acionado');
+    console.log('Refresh token recebido:', refreshToken ? '✅ Sim' : '❌ Não');
+    
     if (!refreshToken) {
+      console.log('❌ Refresh token não fornecido');
       return res.status(401).json({ error: 'Refresh token não fornecido.' });
     }
 
@@ -158,8 +165,11 @@ class AuthController {
       const validSession = await findSessionByToken(refreshToken);
 
       if (!validSession) {
+        console.log('❌ Refresh token inválido ou expirado');
         return res.status(403).json({ error: 'Refresh token inválido ou expirado.' });
       }
+
+      console.log('✅ Session válida encontrada para usuário:', validSession.usuario_id);
 
       const newRefreshToken = crypto.randomBytes(40).toString('hex');
       const newRefreshTokenHash = await bcrypt.hash(newRefreshToken, 10);
@@ -174,16 +184,18 @@ class AuthController {
       
       const [userRows] = await pool.execute('SELECT id, nome, email, papel FROM usuarios WHERE id = ?', [validSession.usuario_id]);
       if (userRows.length === 0) {
+        console.log('❌ Usuário não encontrado');
         return res.status(404).json({ error: 'Usuário não encontrado.' });
       }
       const accessToken = await generateAccessToken(userRows[0]);
       
+      console.log('✅ Novo token de acesso gerado com sucesso');
       setRefreshTokenCookie(res, newRefreshToken);
       setAccessTokenCookie(res, accessToken);
       return res.json({ accessToken });
 
     } catch (error) {
-      console.error('Erro ao renovar token:', error);
+      console.error('❌ Erro ao renovar token:', error);
       return res.status(500).json({ error: 'Erro interno do servidor' });
     }
   }
