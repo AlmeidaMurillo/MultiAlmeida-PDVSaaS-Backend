@@ -106,7 +106,7 @@ class AuthController {
         return res.status(401).json({ error: 'Email ou senha incorretos' });
       }
 
-      const accessToken = generateAccessToken(usuario);
+      const accessToken = await generateAccessToken(usuario);
       const refreshToken = crypto.randomBytes(40).toString('hex');
       const refreshTokenHash = await bcrypt.hash(refreshToken, 10);
       const refreshTokenExpires = new Date(
@@ -176,7 +176,7 @@ class AuthController {
       if (userRows.length === 0) {
         return res.status(404).json({ error: 'Usuário não encontrado.' });
       }
-      const accessToken = generateAccessToken(userRows[0]);
+      const accessToken = await generateAccessToken(userRows[0]);
       
       setRefreshTokenCookie(res, newRefreshToken);
       setAccessTokenCookie(res, accessToken);
@@ -303,7 +303,7 @@ class AuthController {
       const usuario = { id: usuarioId, nome, email, papel };
 
       
-      const accessToken = generateAccessToken(usuario);
+      const accessToken = await generateAccessToken(usuario);
 
       
       const refreshToken = crypto.randomBytes(40).toString('hex');
