@@ -49,7 +49,7 @@ const setRefreshTokenCookie = (res, token) => {
     httpOnly: true,
     secure: NODE_ENV === 'production',
     sameSite: NODE_ENV === 'production' ? 'none' : 'lax',
-    path: '/api/auth', 
+    path: '/', 
     expires: new Date(Date.now() + REFRESH_TOKEN_EXPIRES_IN_DAYS * 24 * 60 * 60 * 1000),
   };
   res.cookie('refreshToken', token, options);
@@ -204,7 +204,7 @@ class AuthController {
     } catch (error) {
       console.error('Erro no logout:', error);
     } finally {
-      res.clearCookie('refreshToken', { httpOnly: true, secure: NODE_ENV === 'production', sameSite: 'strict', path: '/api/auth' });
+      res.clearCookie('refreshToken', { httpOnly: true, secure: NODE_ENV === 'production', sameSite: NODE_ENV === 'production' ? 'none' : 'lax', path: '/' });
       res.status(204).send();
     }
   }
