@@ -22,6 +22,10 @@ if (!allowedOrigins.includes('http://localhost:5173')) {
   allowedOrigins.push('http://localhost:5173');
 }
 
+if (!allowedOrigins.includes('https://localhost:5173')) {
+  allowedOrigins.push('https://localhost:5173');
+}
+
 app.use(
   cors({
     origin: allowedOrigins,
