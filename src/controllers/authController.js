@@ -86,6 +86,12 @@ class AuthController {
       );
 
       
+      // Invalida sessoes antigas do usuario
+      await pool.execute(
+        'UPDATE sessoes_usuarios SET esta_ativo = FALSE WHERE usuario_id = ?',
+        [usuario.id]
+      );
+      
       await pool.execute(
         `INSERT INTO sessoes_usuarios 
          (id, usuario_id, hash_token, expira_em, info_dispositivo, info_navegador, endereco_ip, papel) 
