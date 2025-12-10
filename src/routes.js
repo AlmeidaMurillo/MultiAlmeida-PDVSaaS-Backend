@@ -25,6 +25,7 @@ authRoutes.post('/login', [
 authRoutes.post('/refresh', AuthController.refresh); 
 authRoutes.post('/logout', AuthController.logout); 
 authRoutes.get('/status', authMiddleware, AuthController.checkAuthStatus);
+authRoutes.get('/has-refresh', AuthController.hasRefresh);
 routes.use('/api/auth', authRoutes);
 
 

@@ -248,6 +248,21 @@ class AuthController {
   }
 
 
+  async hasRefresh(req, res) {
+    const { refreshToken } = req.cookies;
+    if (!refreshToken) {
+      return res.json({ hasRefresh: false });
+    }
+
+    try {
+      const validSession = await findSessionByToken(refreshToken);
+      return res.json({ hasRefresh: !!validSession });
+    } catch (error) {
+      console.error('Erro ao verificar has-refresh:', error);
+      return res.json({ hasRefresh: false });
+    }
+  }
+
   async checkAdminAuthStatus(req, res) {
     try {
       if (req.user?.papel !== "admin") {
