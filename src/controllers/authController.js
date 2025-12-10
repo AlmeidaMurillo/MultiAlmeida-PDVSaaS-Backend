@@ -47,20 +47,26 @@ const generateAccessToken = async (user) => {
 const setRefreshTokenCookie = (res, token) => {
   const options = {
     httpOnly: true,
-    secure: NODE_ENV === 'production',
-    sameSite: NODE_ENV === 'production' ? 'none' : 'lax',
+    secure: NODE_ENV === 'production' || process.env.ALLOW_INSECURE_COOKIES === 'true',
+    sameSite: 'none',  // 'none' permite cross-site cookies com withCredentials
     path: '/', 
     expires: new Date(Date.now() + REFRESH_TOKEN_EXPIRES_IN_DAYS * 24 * 60 * 60 * 1000),
   };
+  console.log('🍪 setRefreshTokenCookie options:', { 
+    httpOnly: options.httpOnly, 
+    secure: options.secure, 
+    sameSite: options.sameSite,
+    path: options.path,
+    NODE_ENV 
+  });
   res.cookie('refreshToken', token, options);
 };
 
 const setAccessTokenCookie = (res, token) => {
   const options = {
     httpOnly: true,
-    secure: NODE_ENV === 'production',
-    sameSite: NODE_ENV === 'production' ? 'none' : 'lax',
-    path: '/',
+    secure: NODE_ENV === 'production' || process.env.ALLOW_INSECURE_COOKIES === 'true',
+    sameSite: 'none',  // 'none' permite cross-site cookies com withCredentials
   };
   res.cookie('accessToken', token, options);
 };
@@ -216,7 +222,12 @@ class AuthController {
     } catch (error) {
       console.error('Erro no logout:', error);
     } finally {
-      res.clearCookie('refreshToken', { httpOnly: true, secure: NODE_ENV === 'production', sameSite: NODE_ENV === 'production' ? 'none' : 'lax', path: '/' });
+      res.clearCookie('refreshToken', { 
+        httpOnly: true, 
+        secure: NODE_ENV === 'production' || process.env.ALLOW_INSECURE_COOKIES === 'true', 
+        sameSite: 'none', 
+        path: '/' 
+      });
       res.status(204).send();
     }
   }
