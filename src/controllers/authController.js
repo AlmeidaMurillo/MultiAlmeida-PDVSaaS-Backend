@@ -44,17 +44,18 @@ const generateAccessToken = async (user) => {
 };
 
 
-const setRefreshTokenCookie = (res, token) => {
+const setRefreshTokenCookie = (req, res, token) => {
   // Em desenvolvimento, podemos relaxar o secure flag para testar com HTTP
   // Em produção, SEMPRE use secure: true
-  const secure = NODE_ENV === 'production' 
-    ? true 
-    : process.env.FRONTEND_URL?.startsWith('https') ? true : false;
+  const originIsHttp = req.headers.origin && req.headers.origin.startsWith('http://');
+
+  const secure = !originIsHttp; // Se a origem for HTTP, não é seguro. Caso contrário, é.
+  const sameSite = originIsHttp ? 'lax' : 'none'; // Se a origem for HTTP, use 'lax'. Caso contrário, 'none'.
   
   const options = {
     httpOnly: true,
     secure: secure,
-    sameSite: secure ? 'none' : 'lax',  // 'none' exige secure, use 'lax' sem secure
+    sameSite: sameSite,
     path: '/', 
     expires: new Date(Date.now() + REFRESH_TOKEN_EXPIRES_IN_DAYS * 24 * 60 * 60 * 1000),
   };
@@ -64,20 +65,23 @@ const setRefreshTokenCookie = (res, token) => {
     sameSite: options.sameSite,
     path: options.path,
     NODE_ENV,
-    FRONTEND_URL: process.env.FRONTEND_URL
+    FRONTEND_URL: process.env.FRONTEND_URL,
+    Origin: req.headers.origin,
+    isHttpOrigin: originIsHttp
   });
   res.cookie('refreshToken', token, options);
 };
 
-const setAccessTokenCookie = (res, token) => {
-  const secure = NODE_ENV === 'production' 
-    ? true 
-    : process.env.FRONTEND_URL?.startsWith('https') ? true : false;
+const setAccessTokenCookie = (req, res, token) => {
+  const originIsHttp = req.headers.origin && req.headers.origin.startsWith('http://');
+
+  const secure = !originIsHttp; // Se a origem for HTTP, não é seguro. Caso contrário, é.
+  const sameSite = originIsHttp ? 'lax' : 'none'; // Se a origem for HTTP, use 'lax'. Caso contrário, 'none'.
   
   const options = {
     httpOnly: true,
     secure: secure,
-    sameSite: secure ? 'none' : 'lax',  // 'none' exige secure, use 'lax' sem secure
+    sameSite: sameSite,
   };
   res.cookie('accessToken', token, options);
 };
@@ -152,10 +156,13 @@ class AuthController {
       );
 
       console.log('✅ Login bem-sucedido para:', usuario.email);
+      console.log('Ambiente de desenvolvimento para cookies:');
+      console.log('NODE_ENV:', NODE_ENV);
+      console.log('FRONTEND_URL:', process.env.FRONTEND_URL);
       console.log('✅ Cookies sendo setados - refreshToken (path: /) e accessToken');
       
-      setRefreshTokenCookie(res, refreshToken);
-      setAccessTokenCookie(res, accessToken);
+      setRefreshTokenCookie(req, res, refreshToken);
+      setAccessTokenCookie(req, res, accessToken);
 
       return res.json({
         accessToken,
@@ -207,8 +214,8 @@ class AuthController {
       const accessToken = await generateAccessToken(userRows[0]);
       
       console.log('✅ Novo token de acesso gerado com sucesso');
-      setRefreshTokenCookie(res, newRefreshToken);
-      setAccessTokenCookie(res, accessToken);
+      setRefreshTokenCookie(req, res, newRefreshToken);
+      setAccessTokenCookie(req, res, accessToken);
       return res.json({ accessToken });
 
     } catch (error) {
@@ -233,14 +240,15 @@ class AuthController {
     } catch (error) {
       console.error('Erro no logout:', error);
     } finally {
-      const secure = NODE_ENV === 'production' 
-        ? true 
-        : process.env.FRONTEND_URL?.startsWith('https') ? true : false;
+      const originIsHttp = req.headers.origin && req.headers.origin.startsWith('http://');
+
+      const secure = !originIsHttp; // Se a origem for HTTP, não é seguro. Caso contrário, é.
+      const sameSite = originIsHttp ? 'lax' : 'none'; // Se a origem for HTTP, use 'lax'. Caso contrário, 'none'.
       
       res.clearCookie('refreshToken', { 
         httpOnly: true, 
         secure: secure,
-        sameSite: secure ? 'none' : 'lax', 
+        sameSite: sameSite, 
         path: '/' 
       });
       res.status(204).send();
@@ -383,7 +391,7 @@ class AuthController {
       );
 
       
-      setRefreshTokenCookie(res, refreshToken);
+      setRefreshTokenCookie(req, res, refreshToken);
       
       return res.status(201).json({
         message: "Conta criada com sucesso",
