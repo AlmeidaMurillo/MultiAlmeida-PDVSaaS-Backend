@@ -45,10 +45,16 @@ const generateAccessToken = async (user) => {
 
 
 const setRefreshTokenCookie = (res, token) => {
+  // Em desenvolvimento, podemos relaxar o secure flag para testar com HTTP
+  // Em produção, SEMPRE use secure: true
+  const secure = NODE_ENV === 'production' 
+    ? true 
+    : process.env.FRONTEND_URL?.startsWith('https') ? true : false;
+  
   const options = {
     httpOnly: true,
-    secure: NODE_ENV === 'production' || process.env.ALLOW_INSECURE_COOKIES === 'true',
-    sameSite: 'none',  // 'none' permite cross-site cookies com withCredentials
+    secure: secure,
+    sameSite: secure ? 'none' : 'lax',  // 'none' exige secure, use 'lax' sem secure
     path: '/', 
     expires: new Date(Date.now() + REFRESH_TOKEN_EXPIRES_IN_DAYS * 24 * 60 * 60 * 1000),
   };
@@ -57,16 +63,21 @@ const setRefreshTokenCookie = (res, token) => {
     secure: options.secure, 
     sameSite: options.sameSite,
     path: options.path,
-    NODE_ENV 
+    NODE_ENV,
+    FRONTEND_URL: process.env.FRONTEND_URL
   });
   res.cookie('refreshToken', token, options);
 };
 
 const setAccessTokenCookie = (res, token) => {
+  const secure = NODE_ENV === 'production' 
+    ? true 
+    : process.env.FRONTEND_URL?.startsWith('https') ? true : false;
+  
   const options = {
     httpOnly: true,
-    secure: NODE_ENV === 'production' || process.env.ALLOW_INSECURE_COOKIES === 'true',
-    sameSite: 'none',  // 'none' permite cross-site cookies com withCredentials
+    secure: secure,
+    sameSite: secure ? 'none' : 'lax',  // 'none' exige secure, use 'lax' sem secure
   };
   res.cookie('accessToken', token, options);
 };
@@ -222,10 +233,14 @@ class AuthController {
     } catch (error) {
       console.error('Erro no logout:', error);
     } finally {
+      const secure = NODE_ENV === 'production' 
+        ? true 
+        : process.env.FRONTEND_URL?.startsWith('https') ? true : false;
+      
       res.clearCookie('refreshToken', { 
         httpOnly: true, 
-        secure: NODE_ENV === 'production' || process.env.ALLOW_INSECURE_COOKIES === 'true', 
-        sameSite: 'none', 
+        secure: secure,
+        sameSite: secure ? 'none' : 'lax', 
         path: '/' 
       });
       res.status(204).send();
