@@ -47,9 +47,13 @@ export const paymentLimiter = rateLimit({
   },
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req) => {
-    // Se autenticado, usa o user ID, senão usa IP
-    return req.user ? `user-${req.user.id}` : req.ip;
+  keyGenerator: (req, ipKeyGenerator) => {
+    // Se autenticado, usa o user ID
+    if (req.user) {
+      return `user-${req.user.id}`;
+    }
+    // Senão, usa o helper ipKeyGenerator para normalizar IPv6
+    return ipKeyGenerator(req);
   },
 });
 
