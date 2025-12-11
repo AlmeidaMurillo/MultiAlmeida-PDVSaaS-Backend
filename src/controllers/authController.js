@@ -32,28 +32,16 @@ const generateAccessToken = async (user) => {
 
 
 const setRefreshTokenCookie = (req, res, token) => {
-  const isProduction = NODE_ENV === 'production';
   const origin = req.headers.origin || '';
-  
-  // Detecta se é localhost (com ou sem porta)
   const isLocalhost = origin.includes('localhost') || origin.includes('127.0.0.1');
   
-  // Se for localhost, usa configuração relaxada (funciona com HTTP)
-  // Se for produção (domínio real), usa configuração segura (HTTPS)
   const options = {
-    httpOnly: true, // SEMPRE httpOnly para segurança
-    secure: !isLocalhost, // Secure apenas se NÃO for localhost
-    sameSite: isLocalhost ? 'lax' : 'none', // Lax para localhost, None para cross-domain
+    httpOnly: true,
+    secure: !isLocalhost,
+    sameSite: isLocalhost ? 'lax' : 'none',
     path: '/', 
     maxAge: REFRESH_TOKEN_EXPIRES_IN_DAYS * 24 * 60 * 60 * 1000,
   };
-  
-  console.log('🍪 Cookie Config:', { 
-    origin,
-    isLocalhost,
-    isProduction,
-    cookieOptions: options
-  });
   
   res.cookie('refreshToken', token, options);
 };
@@ -130,12 +118,6 @@ class AuthController {
         ]
       );
 
-      console.log('✅ Login bem-sucedido para:', usuario.email);
-      console.log('Ambiente de desenvolvimento para cookies:');
-      console.log('NODE_ENV:', NODE_ENV);
-      console.log('FRONTEND_URL:', process.env.FRONTEND_URL);
-      console.log('✅ Refresh token (httpOnly) sendo setado no caminho /');
-      
       setRefreshTokenCookie(req, res, refreshToken);
 
       return res.json({
@@ -151,27 +133,17 @@ class AuthController {
 
   async refresh(req, res) {
     const { refreshToken } = req.cookies;
-    console.log('🔄 Refresh endpoint acionado');
-    console.log('📦 Cookies recebidos no refresh:', req.cookies);
-    console.log('🔑 Refresh token presente?', !!refreshToken);
-    console.log('🔑 Refresh token valor:', refreshToken);
     
     if (!refreshToken) {
-      console.log('❌ Refresh token não fornecido');
       return res.status(401).json({ error: 'Refresh token não fornecido.' });
     }
 
     try {
-      console.log('🔍 Procurando sessão válida para o token...');
       const validSession = await findSessionByToken(refreshToken);
-      console.log('🔍 Resultado da busca:', validSession ? 'Sessão encontrada' : 'Sessão NÃO encontrada');
 
       if (!validSession) {
-        console.log('❌ Refresh token inválido ou expirado - retornando 403');
         return res.status(403).json({ error: 'Refresh token inválido ou expirado.' });
       }
-
-      console.log('✅ Session válida encontrada para usuário:', validSession.usuario_id);
 
       const newRefreshToken = crypto.randomBytes(40).toString('hex');
       const newRefreshTokenHash = await bcrypt.hash(newRefreshToken, 10);
@@ -191,7 +163,6 @@ class AuthController {
       }
       const accessToken = await generateAccessToken(userRows[0]);
       
-      console.log('✅ Novo token de acesso gerado com sucesso');
       setRefreshTokenCookie(req, res, newRefreshToken);
       return res.json({ accessToken });
 
@@ -236,22 +207,16 @@ class AuthController {
 
   async hasRefresh(req, res) {
     const { refreshToken } = req.cookies;
-    console.log('🔍 hasRefresh chamado');
-    console.log('📦 Cookies recebidos:', req.cookies);
-    console.log('🔑 RefreshToken presente?', !!refreshToken);
     
     if (!refreshToken) {
-      console.log('❌ Sem refresh token no cookie');
       return res.json({ hasRefresh: false });
     }
 
     try {
-      console.log('🔄 Buscando sessão válida...');
       const validSession = await findSessionByToken(refreshToken);
-      console.log('✅ Sessão encontrada?', !!validSession);
       return res.json({ hasRefresh: !!validSession });
     } catch (error) {
-      console.error('❌ Erro ao verificar has-refresh:', error);
+      console.error('Erro ao verificar has-refresh:', error);
       return res.json({ hasRefresh: false });
     }
   }

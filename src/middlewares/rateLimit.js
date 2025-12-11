@@ -9,8 +9,6 @@ export const generalLimiter = rateLimit({
   },
   standardHeaders: true,
   legacyHeaders: false,
-  // Usa req.ip do Express que respeita trust proxy
-  keyGenerator: (req) => req.ip,
   // Pula rate limiter para requisições de admin (opcional)
   skip: (req) => {
     return req.user && req.user.papel === 'admin';
@@ -26,7 +24,6 @@ export const authLimiter = rateLimit({
   },
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req) => req.ip,
   skipSuccessfulRequests: true, // Não conta requisições bem-sucedidas
 });
 
@@ -39,7 +36,6 @@ export const refreshLimiter = rateLimit({
   },
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req) => req.ip,
 });
 
 // Rate limiter para criação de pagamentos - restritivo
@@ -66,5 +62,4 @@ export const publicApiLimiter = rateLimit({
   },
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req) => req.ip,
 });
