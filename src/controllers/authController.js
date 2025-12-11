@@ -232,15 +232,22 @@ class AuthController {
 
   async hasRefresh(req, res) {
     const { refreshToken } = req.cookies;
+    console.log('🔍 hasRefresh chamado');
+    console.log('📦 Cookies recebidos:', req.cookies);
+    console.log('🔑 RefreshToken presente?', !!refreshToken);
+    
     if (!refreshToken) {
+      console.log('❌ Sem refresh token no cookie');
       return res.json({ hasRefresh: false });
     }
 
     try {
+      console.log('🔄 Buscando sessão válida...');
       const validSession = await findSessionByToken(refreshToken);
+      console.log('✅ Sessão encontrada?', !!validSession);
       return res.json({ hasRefresh: !!validSession });
     } catch (error) {
-      console.error('Erro ao verificar has-refresh:', error);
+      console.error('❌ Erro ao verificar has-refresh:', error);
       return res.json({ hasRefresh: false });
     }
   }
