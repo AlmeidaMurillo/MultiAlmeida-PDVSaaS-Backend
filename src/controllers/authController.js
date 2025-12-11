@@ -152,7 +152,9 @@ class AuthController {
   async refresh(req, res) {
     const { refreshToken } = req.cookies;
     console.log('🔄 Refresh endpoint acionado');
-    console.log('Refresh token recebido:', refreshToken ? '✅ Sim' : '❌ Não');
+    console.log('📦 Cookies recebidos no refresh:', req.cookies);
+    console.log('🔑 Refresh token presente?', !!refreshToken);
+    console.log('🔑 Refresh token valor:', refreshToken);
     
     if (!refreshToken) {
       console.log('❌ Refresh token não fornecido');
@@ -160,10 +162,12 @@ class AuthController {
     }
 
     try {
+      console.log('🔍 Procurando sessão válida para o token...');
       const validSession = await findSessionByToken(refreshToken);
+      console.log('🔍 Resultado da busca:', validSession ? 'Sessão encontrada' : 'Sessão NÃO encontrada');
 
       if (!validSession) {
-        console.log('❌ Refresh token inválido ou expirado');
+        console.log('❌ Refresh token inválido ou expirado - retornando 403');
         return res.status(403).json({ error: 'Refresh token inválido ou expirado.' });
       }
 
