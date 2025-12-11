@@ -33,31 +33,26 @@ const generateAccessToken = async (user) => {
 
 const setRefreshTokenCookie = (req, res, token) => {
   const isProduction = NODE_ENV === 'production';
-  const originIsHttp = req.headers.origin && req.headers.origin.startsWith('http://localhost');
+  const origin = req.headers.origin || '';
   
-  // Em produção, SEMPRE secure:true e sameSite:none (para cross-site)
-  // Em desenvolvimento local (HTTP), relaxar para testar
-  const secure = isProduction || !originIsHttp;
-  const sameSite = isProduction ? 'none' : (originIsHttp ? 'lax' : 'none');
+  // Detecta se é localhost (com ou sem porta)
+  const isLocalhost = origin.includes('localhost') || origin.includes('127.0.0.1');
   
+  // Se for localhost, usa configuração relaxada (funciona com HTTP)
+  // Se for produção (domínio real), usa configuração segura (HTTPS)
   const options = {
-    httpOnly: true, // Proteção contra XSS - cookie não acessível via JavaScript
-    secure: secure, // Apenas HTTPS (exceto dev local)
-    sameSite: sameSite, // Proteção contra CSRF
+    httpOnly: true, // SEMPRE httpOnly para segurança
+    secure: !isLocalhost, // Secure apenas se NÃO for localhost
+    sameSite: isLocalhost ? 'lax' : 'none', // Lax para localhost, None para cross-domain
     path: '/', 
-    maxAge: REFRESH_TOKEN_EXPIRES_IN_DAYS * 24 * 60 * 60 * 1000, // Usar maxAge ao invés de expires
+    maxAge: REFRESH_TOKEN_EXPIRES_IN_DAYS * 24 * 60 * 60 * 1000,
   };
   
-  console.log('🍪 setRefreshTokenCookie options:', { 
-    httpOnly: options.httpOnly, 
-    secure: options.secure, 
-    sameSite: options.sameSite,
-    path: options.path,
-    maxAge: options.maxAge,
-    NODE_ENV,
+  console.log('🍪 Cookie Config:', { 
+    origin,
+    isLocalhost,
     isProduction,
-    Origin: req.headers.origin,
-    isHttpOrigin: originIsHttp
+    cookieOptions: options
   });
   
   res.cookie('refreshToken', token, options);
