@@ -46,6 +46,25 @@ const setRefreshTokenCookie = (req, res, token) => {
   res.cookie('refreshToken', token, options);
 };
 
+// Limpa o cookie usando EXATAMENTE as mesmas configurações da criação
+const clearRefreshTokenCookie = (req, res) => {
+  const origin = req.headers.origin || '';
+  const isLocalhost = origin.includes('localhost') || origin.includes('127.0.0.1');
+  
+  const options = {
+    httpOnly: true,
+    secure: !isLocalhost,
+    sameSite: isLocalhost ? 'lax' : 'none',
+    path: '/',
+  };
+  
+  // Limpa o cookie definindo maxAge como 0
+  res.clearCookie('refreshToken', options);
+  
+  // Garante que o cookie seja sobrescrito com valor vazio
+  res.cookie('refreshToken', '', { ...options, maxAge: 0 });
+};
+
 // Access token NÃO é armazenado em cookie - fica no localStorage do frontend
 // Apenas refresh token vai em cookie httpOnly
 
@@ -170,33 +189,29 @@ class AuthController {
 
   async logout(req, res) {
     const { refreshToken } = req.cookies;
-    if (!refreshToken) {
-      return res.status(204).send(); 
-    }
 
     try {
-      const validSession = await findSessionByToken(refreshToken);
-
-      if (validSession) {
-        await pool.execute('UPDATE sessoes_usuarios SET esta_ativo = FALSE WHERE id = ?', [validSession.id]);
+      // Se houver refresh token, desativa a sessão no banco
+      if (refreshToken) {
+        const validSession = await findSessionByToken(refreshToken);
+        if (validSession) {
+          await pool.execute('UPDATE sessoes_usuarios SET esta_ativo = FALSE WHERE id = ?', [validSession.id]);
+        }
       }
+
+      // SEMPRE limpa o cookie, mesmo se não houver token
+      clearRefreshTokenCookie(req, res);
+      
+      // Retorna sucesso
+      res.status(200).json({ message: 'Logout realizado com sucesso' });
 
     } catch (error) {
       console.error('Erro no logout:', error);
-    } finally {
-      const isProduction = NODE_ENV === 'production';
-      const originIsHttp = req.headers.origin && req.headers.origin.startsWith('http://localhost');
       
-      const secure = isProduction || !originIsHttp;
-      const sameSite = isProduction ? 'none' : (originIsHttp ? 'lax' : 'none');
+      // Mesmo com erro, limpa o cookie
+      clearRefreshTokenCookie(req, res);
       
-      res.clearCookie('refreshToken', { 
-        httpOnly: true, 
-        secure: secure,
-        sameSite: sameSite, 
-        path: '/' 
-      });
-      res.status(204).send();
+      res.status(500).json({ error: 'Erro ao realizar logout' });
     }
   }
 
@@ -205,12 +220,15 @@ class AuthController {
     const { refreshToken } = req.cookies;
     
     if (!refreshToken) {
-      return res.json({ hasRefresh: false });
+      return res.json({ hasRefresh: false, sessionActive: false });
     }
 
     try {
       const validSession = await findSessionByToken(refreshToken);
-      return res.json({ hasRefresh: !!validSession });
+      return res.json({ 
+        hasRefresh: !!validSession,
+        sessionActive: !!validSession 
+      });
     } catch (error) {
       console.error('Erro ao verificar has-refresh:', error);
       return res.json({ hasRefresh: false });

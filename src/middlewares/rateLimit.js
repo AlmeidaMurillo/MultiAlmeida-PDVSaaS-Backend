@@ -1,9 +1,13 @@
 import rateLimit from 'express-rate-limit';
 
+// Lê as variáveis de ambiente para rate limiting
+const RATE_LIMIT_WINDOW = parseInt(process.env.RATE_LIMIT_WINDOW || '15', 10); // em minutos
+const RATE_LIMIT_MAX = parseInt(process.env.RATE_LIMIT_MAX || '100', 10); // requisições
+
 // Rate limiter geral - mais permissivo
 export const generalLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutos
-  max: 100, // Máximo 100 requisições por IP
+  windowMs: RATE_LIMIT_WINDOW * 60 * 1000,
+  max: RATE_LIMIT_MAX,
   message: {
     error: 'Muitas requisições deste IP. Tente novamente mais tarde.',
   },
