@@ -145,15 +145,11 @@ class AuthController {
         return res.status(403).json({ error: 'Refresh token inválido ou expirado.' });
       }
 
-      const newRefreshToken = crypto.randomBytes(40).toString('hex');
-      const newRefreshTokenHash = await bcrypt.hash(newRefreshToken, 10);
-      const newRefreshTokenExpires = new Date(
-        Date.now() + REFRESH_TOKEN_EXPIRES_IN_DAYS * 24 * 60 * 60 * 1000
-      );
-
+      // SEGURANÇA: Não renova a data de expiração - expira_em permanece a data original
+      // Apenas atualiza o último acesso para tracking
       await pool.execute(
-        'UPDATE sessoes_usuarios SET hash_token = ?, expira_em = ?, ultimo_acesso = NOW() WHERE id = ?',
-        [newRefreshTokenHash, newRefreshTokenExpires, validSession.id]
+        'UPDATE sessoes_usuarios SET ultimo_acesso = NOW() WHERE id = ?',
+        [validSession.id]
       );
       
       const [userRows] = await pool.execute('SELECT id, nome, email, papel FROM usuarios WHERE id = ?', [validSession.usuario_id]);
@@ -163,7 +159,7 @@ class AuthController {
       }
       const accessToken = await generateAccessToken(userRows[0]);
       
-      setRefreshTokenCookie(req, res, newRefreshToken);
+      // Não gera novo refresh token - mantém o mesmo
       return res.json({ accessToken });
 
     } catch (error) {
