@@ -18,25 +18,12 @@ if (!ACCESS_TOKEN_SECRET) {
 
 
 const generateAccessToken = async (user) => {
-  let companies = [];
-  if (user.papel === 'usuario') {
-    const [userCompanies] = await pool.execute(
-      `SELECT e.id AS empresa_id, e.nome AS empresa_nome
-       FROM empresas e
-       JOIN usuarios_empresas ue ON e.id = ue.empresa_id
-       WHERE ue.usuario_id = ?`,
-      [user.id]
-    );
-    companies = userCompanies;
-  }
-
   return jwt.sign(
     { 
       id: user.id, 
       nome: user.nome, 
       email: user.email, 
-      papel: user.papel,
-      empresas: companies
+      papel: user.papel
     },
     ACCESS_TOKEN_SECRET,
     { expiresIn: ACCESS_TOKEN_EXPIRES_IN }
@@ -45,46 +32,39 @@ const generateAccessToken = async (user) => {
 
 
 const setRefreshTokenCookie = (req, res, token) => {
-  // Em desenvolvimento, podemos relaxar o secure flag para testar com HTTP
-  // Em produção, SEMPRE use secure: true
-  const originIsHttp = req.headers.origin && req.headers.origin.startsWith('http://');
-
-  const secure = !originIsHttp; // Se a origem for HTTP, não é seguro. Caso contrário, é.
-  const sameSite = originIsHttp ? 'lax' : 'none'; // Se a origem for HTTP, use 'lax'. Caso contrário, 'none'.
+  const isProduction = NODE_ENV === 'production';
+  const originIsHttp = req.headers.origin && req.headers.origin.startsWith('http://localhost');
+  
+  // Em produção, SEMPRE secure:true e sameSite:none (para cross-site)
+  // Em desenvolvimento local (HTTP), relaxar para testar
+  const secure = isProduction || !originIsHttp;
+  const sameSite = isProduction ? 'none' : (originIsHttp ? 'lax' : 'none');
   
   const options = {
-    httpOnly: true,
-    secure: secure,
-    sameSite: sameSite,
+    httpOnly: true, // Proteção contra XSS - cookie não acessível via JavaScript
+    secure: secure, // Apenas HTTPS (exceto dev local)
+    sameSite: sameSite, // Proteção contra CSRF
     path: '/', 
-    expires: new Date(Date.now() + REFRESH_TOKEN_EXPIRES_IN_DAYS * 24 * 60 * 60 * 1000),
+    maxAge: REFRESH_TOKEN_EXPIRES_IN_DAYS * 24 * 60 * 60 * 1000, // Usar maxAge ao invés de expires
   };
+  
   console.log('🍪 setRefreshTokenCookie options:', { 
     httpOnly: options.httpOnly, 
     secure: options.secure, 
     sameSite: options.sameSite,
     path: options.path,
+    maxAge: options.maxAge,
     NODE_ENV,
-    FRONTEND_URL: process.env.FRONTEND_URL,
+    isProduction,
     Origin: req.headers.origin,
     isHttpOrigin: originIsHttp
   });
+  
   res.cookie('refreshToken', token, options);
 };
 
-const setAccessTokenCookie = (req, res, token) => {
-  const originIsHttp = req.headers.origin && req.headers.origin.startsWith('http://');
-
-  const secure = !originIsHttp; // Se a origem for HTTP, não é seguro. Caso contrário, é.
-  const sameSite = originIsHttp ? 'lax' : 'none'; // Se a origem for HTTP, use 'lax'. Caso contrário, 'none'.
-  
-  const options = {
-    httpOnly: true,
-    secure: secure,
-    sameSite: sameSite,
-  };
-  res.cookie('accessToken', token, options);
-};
+// Access token NÃO é armazenado em cookie - fica no localStorage do frontend
+// Apenas refresh token vai em cookie httpOnly
 
 
 
@@ -159,10 +139,9 @@ class AuthController {
       console.log('Ambiente de desenvolvimento para cookies:');
       console.log('NODE_ENV:', NODE_ENV);
       console.log('FRONTEND_URL:', process.env.FRONTEND_URL);
-      console.log('✅ Cookies sendo setados - refreshToken (path: /) e accessToken');
+      console.log('✅ Refresh token (httpOnly) sendo setado no caminho /');
       
       setRefreshTokenCookie(req, res, refreshToken);
-      setAccessTokenCookie(req, res, accessToken);
 
       return res.json({
         accessToken,
@@ -215,7 +194,6 @@ class AuthController {
       
       console.log('✅ Novo token de acesso gerado com sucesso');
       setRefreshTokenCookie(req, res, newRefreshToken);
-      setAccessTokenCookie(req, res, accessToken);
       return res.json({ accessToken });
 
     } catch (error) {
@@ -240,10 +218,11 @@ class AuthController {
     } catch (error) {
       console.error('Erro no logout:', error);
     } finally {
-      const originIsHttp = req.headers.origin && req.headers.origin.startsWith('http://');
-
-      const secure = !originIsHttp; // Se a origem for HTTP, não é seguro. Caso contrário, é.
-      const sameSite = originIsHttp ? 'lax' : 'none'; // Se a origem for HTTP, use 'lax'. Caso contrário, 'none'.
+      const isProduction = NODE_ENV === 'production';
+      const originIsHttp = req.headers.origin && req.headers.origin.startsWith('http://localhost');
+      
+      const secure = isProduction || !originIsHttp;
+      const sameSite = isProduction ? 'none' : (originIsHttp ? 'lax' : 'none');
       
       res.clearCookie('refreshToken', { 
         httpOnly: true, 

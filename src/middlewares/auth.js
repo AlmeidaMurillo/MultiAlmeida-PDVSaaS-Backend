@@ -64,54 +64,16 @@ export function requireAdmin(req, res, next) {
   return next();
 }
 
-
-// Middleware que exige empresa
-export function requireEmpresa(req, res, next) {
-  if (!req.user) {
-    return res.status(401).json({ error: "Usuário não autenticado" });
-  }
-
-  // Admin tem acesso total
-  if (req.user.papel === "admin") {
-    return next();
-  }
-
-  // Usuário comum precisa ter empresa associada
-  if (req.user.papel === "usuario") {
-    const empresaId = req.headers["x-empresa-id"];
-    if (!empresaId) {
-      return res
-        .status(400)
-        .json({ error: "Empresa não selecionada. Use o header X-Empresa-ID" });
-    }
-
-    // Verifica se o usuário tem acesso à empresa
-    const empresa = req.user.empresas?.find(
-      (emp) => emp.empresa_id === empresaId
-    );
-    if (!empresa) {
-      return res.status(403).json({ error: "Acesso negado à empresa selecionada" });
-    }
-
-    req.empresaAtual = empresaId;
-    return next();
-  }
-
-  return res.status(403).json({ error: "Tipo de usuário não autorizado" });
-}
-
 // Middleware que exige assinatura ativa ou vencida para não-admins
 export async function requireSubscription(req, res, next) {
   if (!req.user) {
     return res.status(401).json({ error: "Usuário não autenticado" });
   }
 
-  // Admins sempre têm acesso
   if (req.user.papel === "admin") {
     return next();
   }
 
-  // Verifica se o usuário não-admin tem uma assinatura ativa ou vencida
   try {
     const [assinaturasRows] = await pool.execute(
       `SELECT id FROM assinaturas 

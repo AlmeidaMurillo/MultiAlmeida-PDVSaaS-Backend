@@ -80,25 +80,18 @@ class UserController {
         return res.status(401).json({ message: "Usuário não autenticado." });
       }
 
-      const { nome, email, telefone, cpf, empresa } = req.body;
+      const { nome, email } = req.body;
 
       const [userRows] = await pool.execute("SELECT * FROM usuarios WHERE id = ?", [userId]);
       if (userRows.length === 0) {
         return res.status(404).json({ message: "Usuário não encontrado." });
       }
-      const usuario = userRows[0];
 
       await pool.execute(
-        "UPDATE usuarios SET nome = ?, email = ?, telefone = ?, cpf = ? WHERE id = ?",
-        [nome, email, telefone, cpf, userId]
+        "UPDATE usuarios SET nome = ?, email = ? WHERE id = ?",
+        [nome, email, userId]
       );
 
-      if (usuario.empresa_id && empresa) {
-        await pool.execute(
-          "UPDATE empresas SET nome = ?, cnpj = ?, endereco = ? WHERE id = ?",
-          [empresa.nome, empresa.cnpj, empresa.endereco, usuario.empresa_id]
-        );
-      }
 
       res.status(200).json({ message: "Dados atualizados com sucesso." });
     } catch (error) {
@@ -146,6 +139,26 @@ class UserController {
 
   async me(req, res) {
     res.status(200).json({ user: req.user });
+  }
+
+  async getSubscriptions(req, res) {
+    try {
+      const usuarioId = req.user?.id;
+
+      if (!usuarioId) {
+        return res.status(401).json({ error: "Usuário não autenticado" });
+      }
+
+      const [subscriptions] = await pool.execute(
+        "SELECT * FROM assinaturas WHERE usuario_id = ?",
+        [usuarioId]
+      );
+
+      return res.status(200).json(subscriptions);
+    } catch (error) {
+      console.error("Erro ao buscar assinaturas:", error);
+      return res.status(500).json({ error: "Erro interno do servidor" });
+    }
   }
 }
 
