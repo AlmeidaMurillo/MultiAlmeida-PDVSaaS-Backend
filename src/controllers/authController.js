@@ -43,6 +43,12 @@ const setRefreshTokenCookie = (req, res, token) => {
     maxAge: REFRESH_TOKEN_EXPIRES_IN_DAYS * 24 * 60 * 60 * 1000,
   };
   
+  console.log('🍪 Definindo cookie refreshToken:', {
+    origem: origin,
+    isLocalhost,
+    options
+  });
+  
   res.cookie('refreshToken', token, options);
 };
 
@@ -219,19 +225,31 @@ class AuthController {
   async hasRefresh(req, res) {
     const { refreshToken } = req.cookies;
     
+    console.log('🔍 Verificando has-refresh:', {
+      temCookie: !!refreshToken,
+      cookies: Object.keys(req.cookies),
+      origem: req.headers.origin
+    });
+    
     if (!refreshToken) {
+      console.log('⚠️ Nenhum refreshToken encontrado nos cookies');
       return res.json({ hasRefresh: false, sessionActive: false });
     }
 
     try {
       const validSession = await findSessionByToken(refreshToken);
+      console.log('✅ Sessão válida:', {
+        encontrada: !!validSession,
+        sessionId: validSession?.id
+      });
+      
       return res.json({ 
         hasRefresh: !!validSession,
         sessionActive: !!validSession 
       });
     } catch (error) {
-      console.error('Erro ao verificar has-refresh:', error);
-      return res.json({ hasRefresh: false });
+      console.error('❌ Erro ao verificar has-refresh:', error);
+      return res.json({ hasRefresh: false, sessionActive: false });
     }
   }
 
