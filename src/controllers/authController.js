@@ -243,9 +243,27 @@ class AuthController {
         sessionId: validSession?.id
       });
       
+      // Verifica se a sessão foi encontrada e se está ativa
+      if (!validSession) {
+        return res.json({ hasRefresh: false, sessionActive: false });
+      }
+      
+      // Verifica se está ativa no banco (pode ter sido desativada por login em outro lugar)
+      const [sessionRows] = await pool.execute(
+        'SELECT esta_ativo FROM sessoes_usuarios WHERE id = ?',
+        [validSession.id]
+      );
+      
+      const isActive = sessionRows.length > 0 && sessionRows[0].esta_ativo === 1;
+      
+      console.log('✅ Status da sessão:', {
+        sessionId: validSession.id,
+        estaAtivo: isActive
+      });
+      
       return res.json({ 
-        hasRefresh: !!validSession,
-        sessionActive: !!validSession 
+        hasRefresh: isActive,
+        sessionActive: isActive
       });
     } catch (error) {
       console.error('❌ Erro ao verificar has-refresh:', error);
