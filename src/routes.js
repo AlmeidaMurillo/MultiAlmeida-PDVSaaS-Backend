@@ -12,6 +12,15 @@ import { authLimiter, refreshLimiter, paymentLimiter, publicApiLimiter, sessionC
 
 const routes = Router();
 
+// Rota de health check (pública)
+routes.get('/api/health', (req, res) => {
+  res.status(200).json({ 
+    status: 'OK', 
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime() 
+  });
+});
+
 const authRoutes = Router();
 // Rotas de autenticação
 authRoutes.post('/login', authLimiter, [

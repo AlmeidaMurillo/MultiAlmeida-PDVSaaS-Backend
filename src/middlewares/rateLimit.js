@@ -4,6 +4,16 @@ import rateLimit from 'express-rate-limit';
 const RATE_LIMIT_WINDOW = parseInt(process.env.RATE_LIMIT_WINDOW || '15', 10); // em minutos
 const RATE_LIMIT_MAX = parseInt(process.env.RATE_LIMIT_MAX || '500', 10); // requisições
 
+// Função para gerar chave de rate limit (IP + User ID se autenticado)
+const smartKeyGenerator = (req) => {
+  // Se usuário autenticado, usa o ID do usuário
+  if (req.user?.id) {
+    return `user-${req.user.id}`;
+  }
+  // Senão, usa o IP
+  return req.ip;
+};
+
 // Rate limiter geral - mais permissivo
 export const generalLimiter = rateLimit({
   windowMs: RATE_LIMIT_WINDOW * 60 * 1000,
@@ -13,6 +23,7 @@ export const generalLimiter = rateLimit({
   },
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: smartKeyGenerator,
 });
 
 // Rate limiter para login e criação de conta - mais restritivo
@@ -47,17 +58,19 @@ export const sessionCheckLimiter = rateLimit({
   },
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: smartKeyGenerator,
 });
 
-// Rate limiter para criação de pagamentos - restritivo
+// Rate limiter para criação de pagamentos - restritivo (por usuário)
 export const paymentLimiter = rateLimit({
   windowMs: 60 * 60 * 1000, // 1 hora
-  max: 10, // Máximo 10 pagamentos iniciados por hora
+  max: 10, // Máximo 10 pagamentos iniciados por hora POR USUÁRIO
   message: {
     error: 'Muitas tentativas de pagamento. Por favor, aguarde uma hora.',
   },
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: smartKeyGenerator, // Usa user ID quando disponível
 });
 
 // Rate limiter para verificação de status de pagamento - muito permissivo
@@ -68,18 +81,20 @@ export const paymentStatusLimiter = rateLimit({
     error: 'Muitas verificações de status. Aguarde um momento.',
   },
   standardHeaders: true,
+  keyGenerator: smartKeyGenerator,
   legacyHeaders: false,
 });
 
-// Rate limiter para rotas administrativas - muito permissivo
+// Rate limiter para rotas administrativas - muito permissivo (POR ADMIN)
 export const adminLimiter = rateLimit({
   windowMs: 5 * 60 * 1000, // 5 minutos
-  max: 1000, // Máximo 1000 requisições (admins precisam de mais liberdade)
+  max: 1000, // Máximo 1000 requisições POR ADMIN (não por IP)
   message: {
     error: 'Limite de requisições administrativas atingido.',
   },
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: smartKeyGenerator, // Usa ID do admin, não IP
 });
 
 // Rate limiter para APIs públicas (planos) - moderado
