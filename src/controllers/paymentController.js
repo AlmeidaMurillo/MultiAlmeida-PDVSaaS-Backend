@@ -197,13 +197,6 @@ class PaymentController {
         const now = new Date();
         const expiration = new Date(payment.data_expiracao);
         
-        console.log('Verificando expiração:', {
-          now: now.toISOString(),
-          expiration: expiration.toISOString(),
-          expired: now > expiration,
-          status: payment.status
-        });
-        
         if (
           payment.data_expiracao &&
           now > expiration &&
@@ -226,7 +219,6 @@ class PaymentController {
             
             await connection.commit();
             payment.status = "expirado";
-            console.log('Status atualizado para expirado com sucesso');
           } catch (err) {
             await connection.rollback();
             console.error('Erro ao atualizar status de expiração:', err);
@@ -282,13 +274,6 @@ class PaymentController {
       const now = new Date();
       const expiration = new Date(data.expirationTime);
       
-      console.log('Verificando expiração (getPaymentDetails):', {
-        now: now.toISOString(),
-        expiration: expiration.toISOString(),
-        expired: now > expiration,
-        status: data.status
-      });
-      
       if (
         data.expirationTime &&
         now > expiration &&
@@ -312,7 +297,6 @@ class PaymentController {
           
           await expConnection.commit();
           data.status = "expirado";
-          console.log('Status atualizado para expirado com sucesso (getPaymentDetails)');
         } catch (err) {
           await expConnection.rollback();
           console.error("Erro ao atualizar status de expiração:", err);
@@ -418,16 +402,9 @@ class PaymentController {
       );
 
       const paymentId = uuidv4();
-      // Tempo de expiração configurável (2 minutos para teste)
+      // Tempo de expiração configurável (padrão: 2 minutos)
       const PAYMENT_EXPIRATION_MINUTES = parseInt(process.env.PAYMENT_EXPIRATION_MINUTES || '2', 10);
       const expirationTime = new Date(Date.now() + PAYMENT_EXPIRATION_MINUTES * 60 * 1000);
-      
-      console.log('=== CRIANDO PAGAMENTO ===');
-      console.log('Data atual servidor:', new Date().toString());
-      console.log('Data atual UTC:', new Date().toISOString());
-      console.log('Offset timezone:', new Date().getTimezoneOffset(), 'minutos');
-      console.log('Data expiração:', expirationTime.toISOString());
-      console.log('========================');
 
       const paymentClient = new Payment(client);
 
