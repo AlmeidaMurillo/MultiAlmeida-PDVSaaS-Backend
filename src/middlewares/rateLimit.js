@@ -8,9 +8,12 @@ const RATE_LIMIT_MAX = parseInt(process.env.RATE_LIMIT_MAX || '500', 10); // req
 const smartKeyGenerator = (req) => {
   // Se usuário autenticado, usa o ID do usuário
   if (req.user?.id) {
-    return `user-${req.user.id}`;
+    const key = `user-${req.user.id}`;
+    console.log(`🔑 Rate limit key (user): ${key}`);
+    return key;
   }
   // Senão, usa o IP
+  console.log(`🔑 Rate limit key (IP): ${req.ip}`);
   return req.ip;
 };
 
