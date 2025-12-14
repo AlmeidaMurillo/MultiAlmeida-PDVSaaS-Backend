@@ -353,7 +353,20 @@ class AuthController {
         papel: userPapel,
       });
 
-    } let { nome, email, senha } = req.body;
+    } catch (error) {
+      console.error("Erro ao verificar status da autenticação:", error);
+      return res.status(500).json({ error: "Erro interno do servidor" });
+    }
+  }
+
+  async criarConta(req, res) {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
+
+      let { nome, email, senha } = req.body;
 
       if (!nome || !email || !senha) {
         return res
@@ -388,23 +401,9 @@ class AuthController {
         // Delay para dificultar enumeração de emails
         await new Promise(resolve => setTimeout(resolve, 500));
         
-
-      if (!nome || !email || !senha) {
-        return res
-          .status(400)
-          .json({ error: "Nome, email e senha são obrigatórios" });
-      }
-
-      const [existingUsers] = await pool.execute(
-        "SELECT id FROM usuarios WHERE email = ?",
-        [email]
-      );
-
-      if (Array.isArray(existingUsers) && existingUsers.length > 0) {
         return res.status(409).json({ error: "Email já cadastrado" });
       }
 
-      
       const usuarioId = uuidv4();
       const senhaHash = await bcrypt.hash(senha, 10);
       const papel = "usuario";
@@ -416,16 +415,33 @@ class AuthController {
       
       const usuario = { id: usuarioId, nome, email, papel };
 
-      
       const accessToken = await generateAccessToken(usuario);
 
-      
       const refreshToken = crypto.randomBytes(40).toString('hex');
       const refreshTokenHash = await bcrypt.hash(refreshToken, 10);
       const refreshTokenExpires = new Date(
         Date.now() + REFRESH_TOKEN_EXPIRES_IN_DAYS * 24 * 60 * 60 * 1000
       );
-// Log de criação de conta
+
+      await pool.execute(
+        `INSERT INTO sessoes_usuarios 
+         (id, usuario_id, hash_token, expira_em, info_dispositivo, info_navegador, endereco_ip, papel, esta_ativo) 
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, TRUE)`,
+        [
+          uuidv4(),
+          usuario.id,
+          refreshTokenHash,
+          refreshTokenExpires,
+          req.headers['user-agent'] || 'unknown',
+          req.headers['user-agent'] || 'unknown',
+          req.ip,
+          usuario.papel,
+        ]
+      );
+
+      setRefreshTokenCookie(req, res, refreshToken);
+      
+      // Log de criação de conta
       logSecurityEvent(
         SecurityLevel.INFO,
         SecurityEvent.LOGIN_SUCCESS,
@@ -453,28 +469,7 @@ class AuthController {
           error: error.message,
           ip: req.ip
         }
-      
-          usuario.id,
-          refreshTokenHash,
-          refreshTokenExpires,
-          req.headers['user-agent'] || 'unknown',
-          req.headers['user-agent'] || 'unknown',
-          req.ip,
-          usuario.papel,
-        ]
       );
-
-      
-      setRefreshTokenCookie(req, res, refreshToken);
-      
-      return res.status(201).json({
-        message: "Conta criada com sucesso",
-        accessToken,
-        user: { id: usuario.id, nome: usuario.nome, email: usuario.email, papel: usuario.papel },
-      });
-
-    } catch (error) {
-      console.error("Erro ao criar conta:", error);
       return res.status(500).json({ error: "Erro interno do servidor" });
     }
   }
