@@ -95,10 +95,16 @@ class PaymentController {
           ? "cancelado"
           : "pendente";
 
-      const [updateResult] = await connection.execute(
-        "UPDATE pagamentos_assinatura SET status_pagamento = ?, data_pagamento = NOW(), transaction_id = ? WHERE id = ?",
-        [novoStatusPagamento, payment.id, nossoPagamentoId]
-      );
+      // Define data_pagamento APENAS quando o pagamento for aprovado
+      const updateQuery = novoStatusPagamento === "aprovado"
+        ? "UPDATE pagamentos_assinatura SET status_pagamento = ?, data_pagamento = NOW(), transaction_id = ? WHERE id = ?"
+        : "UPDATE pagamentos_assinatura SET status_pagamento = ?, transaction_id = ? WHERE id = ?";
+      
+      const updateParams = novoStatusPagamento === "aprovado"
+        ? [novoStatusPagamento, payment.id, nossoPagamentoId]
+        : [novoStatusPagamento, payment.id, nossoPagamentoId];
+
+      const [updateResult] = await connection.execute(updateQuery, updateParams);
 
       if (updateResult.affectedRows === 0) {
         await connection.rollback();

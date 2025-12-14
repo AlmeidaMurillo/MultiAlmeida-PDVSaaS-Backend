@@ -10,6 +10,9 @@ const pool = mysql.createPool({
   password: process.env.MYSQLPASSWORD || process.env.DB_PASSWORD,
   database: process.env.MYSQLDATABASE || process.env.DB_NAME,
   
+  // Configuração de timezone para Brasil (UTC-3)
+  timezone: 'America/Sao_Paulo',
+  
   waitForConnections: true,
   connectionLimit: 10,
   queueLimit: 0,
