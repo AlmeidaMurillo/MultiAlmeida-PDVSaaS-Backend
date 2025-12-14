@@ -1,19 +1,10 @@
 import jwt from 'jsonwebtoken';
 import pool from '../db.js';
-import crypto from 'crypto';
 
 const ACCESS_TOKEN_SECRET = process.env.ACCESS_TOKEN_SECRET;
 if (!ACCESS_TOKEN_SECRET) {
   throw new Error("ACCESS_TOKEN_SECRET não definido nas variáveis de ambiente");
 }
-
-// Proteção contra timing attacks
-const constantTimeCompare = (a, b) => {
-  return crypto.timingSafeEqual(
-    Buffer.from(a, 'utf8'),
-    Buffer.from(b, 'utf8')
-  );
-};
 
 export async function authMiddleware(req, res, next) {
   let token = null;
