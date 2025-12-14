@@ -89,14 +89,14 @@ routes.get('/api/admin/planos', authMiddleware, requireAdmin, PlanosController.l
 routes.put('/api/admin/planos/:id', authMiddleware, requireAdmin, PlanosController.update);
 routes.delete('/api/admin/planos/:id', authMiddleware, requireAdmin, PlanosController.delete);
 
-// Rotas de carrinho
+// Rotas de carrinho (rotas específicas ANTES das genéricas)
+routes.post('/api/carrinho/cupom', authMiddleware, CarrinhoController.aplicarCupom);
+routes.delete('/api/carrinho/cupom', authMiddleware, CarrinhoController.removerCupom);
 routes.get('/api/carrinho', authMiddleware, CarrinhoController.listar);
 routes.post('/api/carrinho', authMiddleware, CarrinhoController.adicionar);
 routes.delete('/api/carrinho/:id', authMiddleware, CarrinhoController.remover);
 routes.put('/api/carrinho/:id/quantidade', authMiddleware, CarrinhoController.atualizarQuantidade);
 routes.delete('/api/carrinho', authMiddleware, CarrinhoController.limpar);
-routes.post('/api/carrinho/cupom', authMiddleware, CarrinhoController.aplicarCupom);
-routes.delete('/api/carrinho/cupom', authMiddleware, CarrinhoController.removerCupom);
 
 // Rota pública para validar cupons (mantida para compatibilidade)
 routes.post('/api/cupons/validar', authMiddleware, CuponsController.validar);
