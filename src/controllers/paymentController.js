@@ -384,7 +384,9 @@ class PaymentController {
       );
 
       const paymentId = uuidv4();
-      const expirationTime = new Date(Date.now() + 1 * 60 * 1000);
+      // Tempo de expiração configurável (2 minutos para teste)
+      const PAYMENT_EXPIRATION_MINUTES = parseInt(process.env.PAYMENT_EXPIRATION_MINUTES || '2', 10);
+      const expirationTime = new Date(Date.now() + PAYMENT_EXPIRATION_MINUTES * 60 * 1000);
 
       const paymentClient = new Payment(client);
 
