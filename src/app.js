@@ -71,6 +71,14 @@ if (!allowedOrigins.includes('https://localhost:5173')) {
   allowedOrigins.push('https://localhost:5173');
 }
 
+// Suporte a 127.0.0.1 em desenvolvimento
+if (!allowedOrigins.includes('http://127.0.0.1:5173')) {
+  allowedOrigins.push('http://127.0.0.1:5173');
+}
+if (!allowedOrigins.includes('https://127.0.0.1:5173')) {
+  allowedOrigins.push('https://127.0.0.1:5173');
+}
+
 app.use(
   cors({
     origin: (origin, callback) => {

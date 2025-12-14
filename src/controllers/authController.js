@@ -68,10 +68,20 @@ const setRefreshTokenCookie = (req, res, token) => {
   const isLocalhost = origin.includes('localhost') || origin.includes('127.0.0.1');
   const isProduction = NODE_ENV === 'production';
   
+  // Detecta se a request é cross-site (origem diferente do host do backend)
+  let isCrossSite = false;
+  try {
+    const originHost = origin ? new URL(origin).host : '';
+    const backendHost = req.get('host');
+    isCrossSite = !!origin && originHost && backendHost && originHost !== backendHost;
+  } catch {}
+
   const options = {
     httpOnly: true,
     secure: isProduction, // true apenas em produção
-    sameSite: isLocalhost ? 'lax' : 'none', // 'lax' para localhost, 'none' para cross-origin
+    // Em requests cross-site (ex: frontend localhost -> backend Railway), usar None
+    // Em same-site (ex: tudo em localhost), manter Lax para maior segurança
+    sameSite: isCrossSite ? 'none' : 'lax',
     path: '/', 
     maxAge: REFRESH_TOKEN_EXPIRES_IN_DAYS * 24 * 60 * 60 * 1000,
   };
@@ -106,7 +116,8 @@ const clearRefreshTokenCookie = (req, res) => {
   const options = {
     httpOnly: true,
     secure: isProduction,
-    sameSite: isLocalhost ? 'lax' : 'none',
+    // Deve espelhar exatamente a política usada ao setar o cookie
+    sameSite: isCrossSite ? 'none' : 'lax',
     path: '/',
   };
   
