@@ -6,6 +6,7 @@ import UserController from './controllers/userController.js';
 import PaymentController from './controllers/paymentController.js';
 import PlanosController from './controllers/planosController.js';
 import CarrinhoController from './controllers/carrinhoController.js';
+import CuponsController from './controllers/cuponsController.js';
 import { authMiddleware, requireAdmin } from './middlewares/auth.js';
 import { authLimiter, refreshLimiter, paymentLimiter, publicApiLimiter, sessionCheckLimiter, paymentStatusLimiter } from './middlewares/rateLimit.js';
 
@@ -63,6 +64,12 @@ adminRoutes.get('/planos', authMiddleware, requireAdmin, PlanosController.list);
 adminRoutes.put('/planos/:id', authMiddleware, requireAdmin, PlanosController.update);
 adminRoutes.delete('/planos/:id', authMiddleware, requireAdmin, PlanosController.delete);
 adminRoutes.get('/pagamentos', authMiddleware, requireAdmin, PaymentController.listAdminPayments);
+
+// Rotas de cupons (admin)
+adminRoutes.get('/cupons', authMiddleware, requireAdmin, CuponsController.listar);
+adminRoutes.post('/cupons', authMiddleware, requireAdmin, CuponsController.criar);
+adminRoutes.put('/cupons/:id', authMiddleware, requireAdmin, CuponsController.atualizar);
+adminRoutes.delete('/cupons/:id', authMiddleware, requireAdmin, CuponsController.deletar);
 routes.use('/api/admin', adminRoutes);
 
 // Rotas de pagamento
@@ -88,5 +95,8 @@ routes.post('/api/carrinho', authMiddleware, CarrinhoController.adicionar);
 routes.delete('/api/carrinho/:id', authMiddleware, CarrinhoController.remover);
 routes.put('/api/carrinho/:id/quantidade', authMiddleware, CarrinhoController.atualizarQuantidade);
 routes.delete('/api/carrinho', authMiddleware, CarrinhoController.limpar);
+
+// Rota pública para validar cupons
+routes.post('/api/cupons/validar', authMiddleware, CuponsController.validar);
 
 export default routes;
