@@ -67,19 +67,21 @@ routes.post(
 
 // Rotas administrativas com rate limiter específico
 const adminRoutes = Router();
-adminRoutes.use(adminLimiter); // Aplica rate limiter específico para admins
-adminRoutes.get('/auth/status', authMiddleware, requireAdmin, AuthController.checkAdminAuthStatus);
-adminRoutes.post('/planos', authMiddleware, requireAdmin, PlanosController.create);
-adminRoutes.get('/planos', authMiddleware, requireAdmin, PlanosController.list);
-adminRoutes.put('/planos/:id', authMiddleware, requireAdmin, PlanosController.update);
-adminRoutes.delete('/planos/:id', authMiddleware, requireAdmin, PlanosController.delete);
-adminRoutes.get('/pagamentos', authMiddleware, requireAdmin, PaymentController.listAdminPayments);
+// Aplica authMiddleware PRIMEIRO para popular req.user, depois rate limiter
+adminRoutes.use(authMiddleware); // Autentica ANTES do rate limit
+adminRoutes.use(adminLimiter); // Agora pode usar req.user.id para rate limit por admin
+adminRoutes.get('/auth/status', requireAdmin, AuthController.checkAdminAuthStatus);
+adminRoutes.post('/planos', requireAdmin, PlanosController.create);
+adminRoutes.get('/planos', requireAdmin, PlanosController.list);
+adminRoutes.put('/planos/:id', requireAdmin, PlanosController.update);
+adminRoutes.delete('/planos/:id', requireAdmin, PlanosController.delete);
+adminRoutes.get('/pagamentos', requireAdmin, PaymentController.listAdminPayments);
 
 // Rotas de cupons (admin)
-adminRoutes.get('/cupons', authMiddleware, requireAdmin, CuponsController.listar);
-adminRoutes.post('/cupons', authMiddleware, requireAdmin, CuponsController.criar);
-adminRoutes.put('/cupons/:id', authMiddleware, requireAdmin, CuponsController.atualizar);
-adminRoutes.delete('/cupons/:id', authMiddleware, requireAdmin, CuponsController.deletar);
+adminRoutes.get('/cupons', requireAdmin, CuponsController.listar);
+adminRoutes.post('/cupons', requireAdmin, CuponsController.criar);
+adminRoutes.put('/cupons/:id', requireAdmin, CuponsController.atualizar);
+adminRoutes.delete('/cupons/:id', requireAdmin, CuponsController.deletar);
 routes.use('/api/admin', adminRoutes);
 
 // Rotas de pagamento
