@@ -33,8 +33,8 @@ try {
 
 
 const ACCESS_TOKEN_SECRET = process.env.ACCESS_TOKEN_SECRET;
-const ACCESS_TOKEN_EXPIRES_IN = process.env.ACCESS_TOKEN_EXPIRES_IN || '8h'; // Aumentado de 2h para 8h
-const REFRESH_TOKEN_EXPIRES_IN_DAYS = parseInt(process.env.REFRESH_TOKEN_EXPIRES_IN_DAYS || '7', 10);
+const ACCESS_TOKEN_EXPIRES_IN = process.env.ACCESS_TOKEN_EXPIRES_IN || '12h'; // Aumentado para 12h para evitar deslogamento
+const REFRESH_TOKEN_EXPIRES_IN_DAYS = parseInt(process.env.REFRESH_TOKEN_EXPIRES_IN_DAYS || '30', 10); // 30 dias padrão
 const NODE_ENV = process.env.NODE_ENV;
 
 console.log('🔧 Configuração de tokens:', {
@@ -87,10 +87,14 @@ const setRefreshTokenCookie = (req, res, token) => {
     origem: origin,
     isLocalhost,
     isProduction,
-    options
+    options,
+    cookieValue: token.substring(0, 10) + '...'
   });
   
   res.cookie('refreshToken', token, options);
+  
+  // Log adicional para debug
+  console.log('🍪 Cookie set-cookie header:', res.getHeader('set-cookie'));
 };
 
 // Limpa o cookie usando EXATAMENTE as mesmas configurações da criação
@@ -315,9 +319,10 @@ class AuthController {
     console.log('🔍 Verificando has-refresh:', {
       temCookie: !!refreshToken,
       cookies: Object.keys(req.cookies),
-      allCookies: req.cookies,
       cookieHeader: req.headers.cookie,
       origem: req.headers.origin,
+      referer: req.headers.referer,
+      withCredentials: req.headers['access-control-request-credentials'],
       userAgent: req.headers['user-agent']?.substring(0, 50)
     });
     
