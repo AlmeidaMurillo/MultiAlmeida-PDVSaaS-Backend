@@ -255,7 +255,9 @@ class PaymentController {
             p.nome as nomePlano,
             p.periodo as periodoPlano,
             p.preco as precoPlano,
-            p.duracao_dias as duracaoDiasPlano
+            p.duracao_dias as duracaoDiasPlano,
+            p.beneficios as beneficiosPlano,
+            p.quantidade_empresas as quantidadeEmpresas
          FROM pagamentos_assinatura pa
          JOIN planos p ON pa.plano_id = p.id
          WHERE pa.id = ?`,
