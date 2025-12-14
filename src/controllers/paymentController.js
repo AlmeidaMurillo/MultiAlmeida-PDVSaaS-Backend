@@ -194,27 +194,44 @@ class PaymentController {
         const payment = pagamento[0];
         
         // Verifica se o pagamento expirou
+        const now = new Date();
+        const expiration = new Date(payment.data_expiracao);
+        
+        console.log('Verificando expiração:', {
+          now: now.toISOString(),
+          expiration: expiration.toISOString(),
+          expired: now > expiration,
+          status: payment.status
+        });
+        
         if (
           payment.data_expiracao &&
-          new Date() > new Date(payment.data_expiracao) &&
+          now > expiration &&
           payment.status === "pendente"
         ) {
           await connection.beginTransaction();
           
-          // Atualiza o status do pagamento para expirado
-          await connection.execute(
-            "UPDATE pagamentos_assinatura SET status_pagamento = 'expirado' WHERE id = ?",
-            [id]
-          );
-          
-          // Atualiza o status da assinatura para inativa
-          await connection.execute(
-            "UPDATE assinaturas SET status = 'inativa' WHERE id = ? AND status = 'pendente'",
-            [payment.assinatura_id]
-          );
-          
-          await connection.commit();
-          payment.status = "expirado";
+          try {
+            // Atualiza o status do pagamento para expirado
+            await connection.execute(
+              "UPDATE pagamentos_assinatura SET status_pagamento = 'expirado' WHERE id = ?",
+              [id]
+            );
+            
+            // Atualiza o status da assinatura para inativa
+            await connection.execute(
+              "UPDATE assinaturas SET status = 'inativa' WHERE id = ? AND status = 'pendente'",
+              [payment.assinatura_id]
+            );
+            
+            await connection.commit();
+            payment.status = "expirado";
+            console.log('Status atualizado para expirado com sucesso');
+          } catch (err) {
+            await connection.rollback();
+            console.error('Erro ao atualizar status de expiração:', err);
+            throw err;
+          }
         }
         
         return res.status(200).json({ status: payment.status });
@@ -262,34 +279,45 @@ class PaymentController {
       const data = pagamento[0];
 
       // Verifica e atualiza status se expirou
+      const now = new Date();
+      const expiration = new Date(data.expirationTime);
+      
+      console.log('Verificando expiração (getPaymentDetails):', {
+        now: now.toISOString(),
+        expiration: expiration.toISOString(),
+        expired: now > expiration,
+        status: data.status
+      });
+      
       if (
         data.expirationTime &&
-        new Date() > new Date(data.expirationTime) &&
+        now > expiration &&
         data.status === "pendente"
       ) {
-        const connection = await pool.getConnection();
-        await connection.beginTransaction();
+        const expConnection = await pool.getConnection();
+        await expConnection.beginTransaction();
         
         try {
           // Atualiza o status do pagamento
-          await connection.execute(
+          await expConnection.execute(
             "UPDATE pagamentos_assinatura SET status_pagamento = ? WHERE id = ?",
             ["expirado", id]
           );
           
           // Atualiza o status da assinatura para inativa (não cancela para manter no carrinho)
-          await connection.execute(
+          await expConnection.execute(
             "UPDATE assinaturas SET status = 'inativa' WHERE id = (SELECT assinatura_id FROM pagamentos_assinatura WHERE id = ?) AND status = 'pendente'",
             [id]
           );
           
-          await connection.commit();
+          await expConnection.commit();
           data.status = "expirado";
+          console.log('Status atualizado para expirado com sucesso (getPaymentDetails)');
         } catch (err) {
-          await connection.rollback();
+          await expConnection.rollback();
           console.error("Erro ao atualizar status de expiração:", err);
         } finally {
-          connection.release();
+          expConnection.release();
         }
       }
 
