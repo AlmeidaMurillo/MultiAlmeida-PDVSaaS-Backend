@@ -118,8 +118,14 @@ app.use((req, res, next) => {
   next();
 });
 
-// Rate limiter geral aplicado a todas as rotas
-app.use(generalLimiter);
+// Rate limiter geral aplicado a todas as rotas (EXCETO admin que tem seu próprio)
+app.use((req, res, next) => {
+  // Pula rate limit geral para rotas admin (elas têm adminLimiter específico)
+  if (req.path.startsWith('/api/admin')) {
+    return next();
+  }
+  generalLimiter(req, res, next);
+});
 
 // Middleware de logging de segurança (se disponível)
 app.use(securityLoggerMiddleware);
