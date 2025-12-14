@@ -33,9 +33,15 @@ try {
 
 
 const ACCESS_TOKEN_SECRET = process.env.ACCESS_TOKEN_SECRET;
-const ACCESS_TOKEN_EXPIRES_IN = process.env.ACCESS_TOKEN_EXPIRES_IN || '2h';
+const ACCESS_TOKEN_EXPIRES_IN = process.env.ACCESS_TOKEN_EXPIRES_IN || '8h'; // Aumentado de 2h para 8h
 const REFRESH_TOKEN_EXPIRES_IN_DAYS = parseInt(process.env.REFRESH_TOKEN_EXPIRES_IN_DAYS || '7', 10);
 const NODE_ENV = process.env.NODE_ENV;
+
+console.log('🔧 Configuração de tokens:', {
+  accessTokenExpires: ACCESS_TOKEN_EXPIRES_IN,
+  refreshTokenDays: REFRESH_TOKEN_EXPIRES_IN_DAYS,
+  nodeEnv: NODE_ENV
+});
 
 if (!ACCESS_TOKEN_SECRET) {
   throw new Error('ACCESS_TOKEN_SECRET não definido nas variáveis de ambiente');
@@ -60,18 +66,27 @@ const generateAccessToken = async (user) => {
 const setRefreshTokenCookie = (req, res, token) => {
   const origin = req.headers.origin || '';
   const isLocalhost = origin.includes('localhost') || origin.includes('127.0.0.1');
+  const isProduction = NODE_ENV === 'production';
   
   const options = {
     httpOnly: true,
-    secure: !isLocalhost,
-    sameSite: isLocalhost ? 'lax' : 'none',
+    secure: isProduction, // true apenas em produção
+    sameSite: isLocalhost ? 'lax' : 'none', // 'lax' para localhost, 'none' para cross-origin
     path: '/', 
     maxAge: REFRESH_TOKEN_EXPIRES_IN_DAYS * 24 * 60 * 60 * 1000,
   };
   
+  // Em desenvolvimento local, não define domínio para permitir localhost
+  if (!isLocalhost && !isProduction) {
+    // Força sameSite none para ambientes de staging
+    options.sameSite = 'none';
+    options.secure = true;
+  }
+  
   console.log('🍪 Definindo cookie refreshToken:', {
     origem: origin,
     isLocalhost,
+    isProduction,
     options
   });
   
@@ -82,13 +97,21 @@ const setRefreshTokenCookie = (req, res, token) => {
 const clearRefreshTokenCookie = (req, res) => {
   const origin = req.headers.origin || '';
   const isLocalhost = origin.includes('localhost') || origin.includes('127.0.0.1');
+  const isProduction = NODE_ENV === 'production';
   
   const options = {
     httpOnly: true,
-    secure: !isLocalhost,
+    secure: isProduction,
     sameSite: isLocalhost ? 'lax' : 'none',
     path: '/',
   };
+  
+  if (!isLocalhost && !isProduction) {
+    options.sameSite = 'none';
+    options.secure = true;
+  }
+  
+  console.log('🧹 Limpando cookie refreshToken:', { origem: origin, options });
   
   // Limpa o cookie definindo maxAge como 0
   res.clearCookie('refreshToken', options);
@@ -187,6 +210,14 @@ class AuthController {
       );
 
       setRefreshTokenCookie(req, res, refreshToken);
+      
+      console.log('✅ Login bem-sucedido:', {
+        userId: usuario.id,
+        email: usuario.email,
+        papel: usuario.papel,
+        tokenExpires: refreshTokenExpires,
+        ip: req.ip
+      });
 
       return res.json({
         accessToken,
@@ -284,7 +315,10 @@ class AuthController {
     console.log('🔍 Verificando has-refresh:', {
       temCookie: !!refreshToken,
       cookies: Object.keys(req.cookies),
-      origem: req.headers.origin
+      allCookies: req.cookies,
+      cookieHeader: req.headers.cookie,
+      origem: req.headers.origin,
+      userAgent: req.headers['user-agent']?.substring(0, 50)
     });
     
     if (!refreshToken) {
