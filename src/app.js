@@ -40,10 +40,12 @@ app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
-      styleSrc: ["'self'", "'unsafe-inline'"],
+      styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
       scriptSrc: ["'self'"],
       imgSrc: ["'self'", 'data:', 'https:'],
+      fontSrc: ["'self'", 'data:', 'https://fonts.gstatic.com'],
       objectSrc: ["'none'"],
+      frameAncestors: ["'none'"], // Proteção contra clickjacking (equivalente ao frame-ancestors)
       upgradeInsecureRequests: [],
     },
   },
@@ -52,7 +54,7 @@ app.use(helmet({
     includeSubDomains: true,
     preload: true
   },
-  frameguard: { action: 'deny' }, // Proteção contra clickjacking
+  frameguard: { action: 'deny' }, // X-Frame-Options: DENY
   noSniff: true, // Previne MIME sniffing
   xssFilter: true, // Ativa proteção XSS do navegador
   hidePoweredBy: true, // Remove header X-Powered-By
