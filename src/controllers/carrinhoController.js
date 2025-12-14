@@ -87,7 +87,19 @@ class CarrinhoController {
           return res.status(404).json({ error: "Plano não encontrado" });
         }
 
-        
+        // Verificar se o item já existe no carrinho
+        const [existingItems] = await connection.execute(
+          "SELECT id FROM carrinho_usuarios WHERE usuario_id = ? AND plano_id = ? AND periodo = ?",
+          [usuarioId, planoId, periodo]
+        );
+
+        if (existingItems.length > 0) {
+          // Item já existe no carrinho, não fazer nada para preservar o cupom
+          await connection.commit();
+          return res.json({ message: "Item já está no carrinho" });
+        }
+
+        // Se não existe, limpar o carrinho e adicionar o novo item
         await connection.execute("DELETE FROM carrinho_usuarios WHERE usuario_id = ?", [usuarioId]);
 
         
