@@ -8,14 +8,32 @@ class CarrinhoController {
       const usuarioId = req.user.id;
 
       const [itens] = await pool.execute(`
-        SELECT c.*, p.nome, p.preco, p.duracao_dias, p.beneficios, p.periodo
+        SELECT c.id, c.usuario_id, c.plano_id, c.periodo, c.quantidade, c.criado_em, c.atualizado_em,
+               p.nome, p.preco, p.duracao_dias, p.beneficios
         FROM carrinho_usuarios c
         JOIN planos p ON c.plano_id = p.id AND c.periodo = p.periodo
         WHERE c.usuario_id = ?
         ORDER BY c.criado_em DESC
       `, [usuarioId]);
 
-      res.json({ itens });
+      // Formata os itens com os dados do plano parseados
+      const itensFormatados = itens.map(item => ({
+        id: item.id,
+        usuario_id: item.usuario_id,
+        plano_id: item.plano_id,
+        periodo: item.periodo,
+        quantidade: item.quantidade,
+        criado_em: item.criado_em,
+        atualizado_em: item.atualizado_em,
+        nome: item.nome,
+        preco: parseFloat(item.preco),
+        duracao_dias: item.duracao_dias,
+        beneficios: typeof item.beneficios === 'string' 
+          ? JSON.parse(item.beneficios) 
+          : item.beneficios
+      }));
+
+      res.json({ itens: itensFormatados });
     } catch (error) {
       console.error("Erro ao listar carrinho:", error);
       res.status(500).json({ error: "Erro interno do servidor" });
