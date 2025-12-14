@@ -252,14 +252,21 @@ class PaymentController {
             pa.data_expiracao as expirationTime,
             pa.usuario_id as usuarioId,
             pa.plano_id as planId,
+            pa.valor as valorFinal,
+            pa.valor_desconto as valorDesconto,
+            pa.cupom_id as cupomId,
             p.nome as nomePlano,
             p.periodo as periodoPlano,
             p.preco as precoPlano,
             p.duracao_dias as duracaoDiasPlano,
             p.beneficios as beneficiosPlano,
-            p.quantidade_empresas as quantidadeEmpresas
+            p.quantidade_empresas as quantidadeEmpresas,
+            c.codigo as cupomCodigo,
+            c.tipo as cupomTipo,
+            c.valor as cupomValor
          FROM pagamentos_assinatura pa
          JOIN planos p ON pa.plano_id = p.id
+         LEFT JOIN cupons c ON pa.cupom_id = c.id
          WHERE pa.id = ?`,
         [id]
       );
@@ -373,6 +380,7 @@ class PaymentController {
   
   async initiatePayment(req, res) {
     const usuarioId = req.user.id;
+    const { cupom_codigo } = req.body;
     const connection = await pool.getConnection();
     await connection.beginTransaction();
 
@@ -403,7 +411,48 @@ class PaymentController {
       const plano = planRows[0];
 
       
-      const preco = Number(plano.preco.toString().replace(",", "."));
+      let preco = Number(plano.preco.toString().replace(",", "."));
+      let cupomId = null;
+      let valorDesconto = 0;
+      let cupomInfo = null;
+
+      // Validar e aplicar cupom se fornecido
+      if (cupom_codigo) {
+        const [cupons] = await connection.execute(
+          'SELECT * FROM cupons WHERE codigo = ?',
+          [cupom_codigo.toUpperCase()]
+        );
+
+        if (cupons.length > 0) {
+          const cupom = cupons[0];
+          const agora = new Date();
+          const dataInicio = new Date(cupom.data_inicio);
+          const dataFim = new Date(cupom.data_fim);
+
+          // Validar cupom
+          if (cupom.ativo && agora >= dataInicio && agora <= dataFim) {
+            if (cupom.quantidade_maxima === null || cupom.quantidade_usada < cupom.quantidade_maxima) {
+              // Calcular desconto
+              if (cupom.tipo === 'percentual') {
+                valorDesconto = (preco * parseFloat(cupom.valor)) / 100;
+              } else {
+                valorDesconto = parseFloat(cupom.valor);
+              }
+              
+              valorDesconto = Math.min(valorDesconto, preco);
+              preco = Math.max(0, preco - valorDesconto);
+              cupomId = cupom.id;
+              
+              cupomInfo = {
+                codigo: cupom.codigo,
+                tipo: cupom.tipo,
+                valor: cupom.valor,
+                desconto: valorDesconto
+              };
+            }
+          }
+        }
+      }
 
       const paymentId = uuidv4();
       // Tempo de expiração configurável (padrão: 2 minutos)
@@ -432,12 +481,12 @@ class PaymentController {
       const qrCodeText =
         response.point_of_interaction?.transaction_data?.qr_code || "";
 
-      // Agora salva apenas o pagamento (sem assinatura)
+      // Agora salva apenas o pagamento (sem assinatura), incluindo cupom se aplicável
       await connection.execute(
         `INSERT INTO pagamentos_assinatura (
           id, usuario_id, plano_id, valor, metodo_pagamento, status_pagamento,
-          data_expiracao, qr_code, qr_code_text
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          data_expiracao, qr_code, qr_code_text, cupom_id, valor_desconto
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           paymentId,
           usuarioId,
@@ -448,6 +497,8 @@ class PaymentController {
           expirationTime,
           qrCodeBase64,
           qrCodeText,
+          cupomId,
+          valorDesconto
         ]
       );
 
@@ -462,9 +513,11 @@ class PaymentController {
           nome: plano.nome,
           periodo: plano.periodo,
           preco,
+          precoOriginal: Number(plano.preco.toString().replace(",", ".")),
           duracaoDias: plano.duracao_dias,
           beneficios: plano.beneficios,
         },
+        cupom: cupomInfo,
         user: {
           nome: req.user.nome,
           email: req.user.email,

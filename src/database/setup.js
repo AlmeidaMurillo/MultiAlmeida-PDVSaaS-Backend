@@ -104,10 +104,13 @@ async function setupDatabase() {
                 qr_code TEXT,
                 qr_code_text TEXT,
                 init_point VARCHAR(255),
+                cupom_id VARCHAR(36) NULL,
+                valor_desconto DECIMAL(10, 2) DEFAULT 0,
                 atualizado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                 FOREIGN KEY (usuario_id) REFERENCES usuarios(id) ON DELETE CASCADE,
                 FOREIGN KEY (plano_id) REFERENCES planos(id) ON DELETE RESTRICT,
-                FOREIGN KEY (assinatura_id) REFERENCES assinaturas(id) ON DELETE SET NULL
+                FOREIGN KEY (assinatura_id) REFERENCES assinaturas(id) ON DELETE SET NULL,
+                FOREIGN KEY (cupom_id) REFERENCES cupons(id) ON DELETE SET NULL
             )
         `);
 
@@ -138,6 +141,22 @@ async function setupDatabase() {
                 FOREIGN KEY (usuario_id) REFERENCES usuarios(id) ON DELETE CASCADE,
                 FOREIGN KEY (plano_id) REFERENCES planos(id) ON DELETE CASCADE,
                 UNIQUE KEY unique_usuario_plano_periodo (usuario_id, plano_id, periodo)
+            )
+        `);
+
+    await pool.execute(`
+            CREATE TABLE IF NOT EXISTS cupons (
+                id VARCHAR(36) PRIMARY KEY,
+                codigo VARCHAR(50) NOT NULL UNIQUE,
+                tipo ENUM('percentual', 'fixo') NOT NULL,
+                valor DECIMAL(10, 2) NOT NULL,
+                quantidade_maxima INT DEFAULT NULL,
+                quantidade_usada INT DEFAULT 0,
+                data_inicio DATETIME NOT NULL,
+                data_fim DATETIME NOT NULL,
+                ativo BOOLEAN DEFAULT true,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
             )
         `);
 
