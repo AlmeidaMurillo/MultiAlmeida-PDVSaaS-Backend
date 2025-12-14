@@ -18,6 +18,13 @@ class CarrinhoController {
         ORDER BY c.criado_em DESC
       `, [usuarioId]);
 
+      console.log(`[DEBUG] Carrinho carregado para usuário ${usuarioId}:`, itens.map(i => ({
+        id: i.id,
+        cupom_codigo: i.cupom_codigo,
+        cupom_desconto: i.cupom_desconto,
+        cupom_tipo: i.cupom_tipo
+      })));
+
       // Formata os itens com os dados do plano parseados
       const itensFormatados = itens.map(item => ({
         id: item.id,
