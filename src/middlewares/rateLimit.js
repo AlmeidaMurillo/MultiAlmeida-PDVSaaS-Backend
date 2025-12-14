@@ -4,17 +4,14 @@ import rateLimit from 'express-rate-limit';
 const RATE_LIMIT_WINDOW = parseInt(process.env.RATE_LIMIT_WINDOW || '15', 10); // em minutos
 const RATE_LIMIT_MAX = parseInt(process.env.RATE_LIMIT_MAX || '500', 10); // requisições
 
-// Função para gerar chave de rate limit (IP + User ID se autenticado)
-const smartKeyGenerator = (req) => {
-  // Se usuário autenticado, usa o ID do usuário
+// Função para gerar chave de rate limit por User ID (quando autenticado)
+const userKeyGenerator = (req) => {
+  // Usa ID do usuário se disponível, senão deixa o padrão (IP normalizado pelo express-rate-limit)
   if (req.user?.id) {
-    const key = `user-${req.user.id}`;
-    console.log(`🔑 Rate limit key (user): ${key}`);
-    return key;
+    return `user-${req.user.id}`;
   }
-  // Senão, usa o IP
-  console.log(`🔑 Rate limit key (IP): ${req.ip}`);
-  return req.ip;
+  // Retorna undefined para usar o keyGenerator padrão (que trata IPv6 corretamente)
+  return undefined;
 };
 
 // Rate limiter geral - mais permissivo
@@ -26,7 +23,7 @@ export const generalLimiter = rateLimit({
   },
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: smartKeyGenerator,
+  keyGenerator: userKeyGenerator,
 });
 
 // Rate limiter para login e criação de conta - mais restritivo
@@ -61,7 +58,7 @@ export const sessionCheckLimiter = rateLimit({
   },
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: smartKeyGenerator,
+  keyGenerator: userKeyGenerator,
 });
 
 // Rate limiter para criação de pagamentos - restritivo (por usuário)
@@ -73,7 +70,7 @@ export const paymentLimiter = rateLimit({
   },
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: smartKeyGenerator, // Usa user ID quando disponível
+  keyGenerator: userKeyGenerator, // Usa user ID quando disponível
 });
 
 // Rate limiter para verificação de status de pagamento - muito permissivo
@@ -84,8 +81,8 @@ export const paymentStatusLimiter = rateLimit({
     error: 'Muitas verificações de status. Aguarde um momento.',
   },
   standardHeaders: true,
-  keyGenerator: smartKeyGenerator,
   legacyHeaders: false,
+  keyGenerator: userKeyGenerator,
 });
 
 // Rate limiter para rotas administrativas - muito permissivo (POR ADMIN)
@@ -97,7 +94,7 @@ export const adminLimiter = rateLimit({
   },
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: smartKeyGenerator, // Usa ID do admin, não IP
+  keyGenerator: userKeyGenerator, // Usa ID do admin, não IP
 });
 
 // Rate limiter para APIs públicas (planos) - moderado
