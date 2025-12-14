@@ -8,8 +8,26 @@ import apicache from 'apicache';
 import cookieParser from 'cookie-parser';
 import routes from './routes.js';
 import { generalLimiter } from './middlewares/rateLimit.js';
-import { sanitizeMiddleware } from './utils/sanitize.js';
-import { securityLoggerMiddleware, attackDetectionMiddleware } from './utils/securityLogger.js';
+
+// Imports condicionais de segurança
+let sanitizeMiddleware = (req, res, next) => next();
+let securityLoggerMiddleware = (req, res, next) => next();
+let attackDetectionMiddleware = (req, res, next) => next();
+
+try {
+  const sanitizeModule = await import('./utils/sanitize.js');
+  sanitizeMiddleware = sanitizeModule.sanitizeMiddleware;
+} catch (err) {
+  console.warn('⚠️  Módulo sanitize.js não encontrado. Sanitização desabilitada.');
+}
+
+try {
+  const securityModule = await import('./utils/securityLogger.js');
+  securityLoggerMiddleware = securityModule.securityLoggerMiddleware;
+  attackDetectionMiddleware = securityModule.attackDetectionMiddleware;
+} catch (err) {
+  console.warn('⚠️  Módulo securityLogger.js não encontrado. Logging de segurança desabilitado.');
+}
 
 const app = express();
 
@@ -103,13 +121,13 @@ app.use((req, res, next) => {
 // Rate limiter geral aplicado a todas as rotas
 app.use(generalLimiter);
 
-// Middleware de logging de segurança
+// Middleware de logging de segurança (se disponível)
 app.use(securityLoggerMiddleware);
 
-// Middleware de detecção de ataques (SQL injection, XSS, etc)
+// Middleware de detecção de ataques (se disponível)
 app.use(attackDetectionMiddleware);
 
-// Middleware de sanitização
+// Middleware de sanitização (se disponível)
 app.use(sanitizeMiddleware);
 
 const cache = apicache.middleware;

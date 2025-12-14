@@ -4,8 +4,32 @@ import { validationResult } from 'express-validator';
 import pool from '../db.js';
 import { v4 as uuidv4 } from 'uuid';
 import crypto from 'crypto';
-import { logLoginAttempt, logPasswordChange, logSecurityEvent, SecurityLevel, SecurityEvent } from '../utils/securityLogger.js';
-import { sanitizeEmail, sanitizeName } from '../utils/sanitize.js';
+
+// Imports condicionais de segurança com fallbacks
+let sanitizeEmail = (email) => email?.toLowerCase().trim();
+let sanitizeName = (name) => name?.trim();
+let logLoginAttempt = () => {};
+let logSecurityEvent = () => {};
+let SecurityLevel = { INFO: 'INFO', WARNING: 'WARNING', CRITICAL: 'CRITICAL' };
+let SecurityEvent = { LOGIN_SUCCESS: 'LOGIN_SUCCESS', LOGOUT: 'LOGOUT', SUSPICIOUS_ACTIVITY: 'SUSPICIOUS_ACTIVITY' };
+
+try {
+  const sanitizeModule = await import('../utils/sanitize.js');
+  sanitizeEmail = sanitizeModule.sanitizeEmail;
+  sanitizeName = sanitizeModule.sanitizeName;
+} catch (err) {
+  console.warn('⚠️  sanitize.js não disponível - usando sanitização básica');
+}
+
+try {
+  const securityModule = await import('../utils/securityLogger.js');
+  logLoginAttempt = securityModule.logLoginAttempt;
+  logSecurityEvent = securityModule.logSecurityEvent;
+  SecurityLevel = securityModule.SecurityLevel;
+  SecurityEvent = securityModule.SecurityEvent;
+} catch (err) {
+  console.warn('⚠️  securityLogger.js não disponível - logging desabilitado');
+}
 
 
 const ACCESS_TOKEN_SECRET = process.env.ACCESS_TOKEN_SECRET;
