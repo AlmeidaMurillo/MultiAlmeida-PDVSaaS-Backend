@@ -17,10 +17,8 @@ const pool = mysql.createPool({
   connectionLimit: 10,
   queueLimit: 0,
   
-  // Timeouts para prevenir conexões penduradas
+  // Timeout para prevenir conexões penduradas
   connectTimeout: 10000, // 10 segundos
-  acquireTimeout: 10000, // 10 segundos
-  timeout: 60000, // 60 segundos
   
   // Previne SQL injection através de prepared statements
   multipleStatements: false, // Desabilita múltiplos statements

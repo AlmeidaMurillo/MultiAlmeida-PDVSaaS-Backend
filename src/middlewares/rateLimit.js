@@ -1,24 +1,8 @@
 import rateLimit from 'express-rate-limit';
-import crypto from 'crypto';
 
 // Lê as variáveis de ambiente para rate limiting
 const RATE_LIMIT_WINDOW = parseInt(process.env.RATE_LIMIT_WINDOW || '15', 10); // em minutos
 const RATE_LIMIT_MAX = parseInt(process.env.RATE_LIMIT_MAX || '500', 10); // requisições
-
-// Função para gerar chave segura de rate limiting
-const secureKeyGenerator = (req) => {
-  const ip = req.ip || req.connection.remoteAddress;
-  const userId = req.user?.id || 'anonymous';
-  const userAgent = req.headers['user-agent'] || 'unknown';
-  
-  const hash = crypto
-    .createHash('sha256')
-    .update(`${ip}-${userId}-${userAgent}`)
-    .digest('hex')
-    .substring(0, 16);
-  
-  return `${ip}-${userId}-${hash}`;
-};
 
 // Rate limiter geral - mais permissivo
 export const generalLimiter = rateLimit({
@@ -29,14 +13,6 @@ export const generalLimiter = rateLimit({
   },
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: secureKeyGenerator,
-  handler: (req, res) => {
-    console.warn(`⚠️ Rate limit atingido: ${secureKeyGenerator(req)}`);
-    res.status(429).json({
-      error: 'Muitas requisições. Aguarde alguns minutos.',
-      retryAfter: Math.ceil(RATE_LIMIT_WINDOW * 60)
-    });
-  }
 });
 
 // Rate limiter para login e criação de conta - mais restritivo
@@ -82,14 +58,6 @@ export const paymentLimiter = rateLimit({
   },
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req, ipKeyGenerator) => {
-    // Se autenticado, usa o user ID
-    if (req.user) {
-      return `user-${req.user.id}`;
-    }
-    // Senão, usa o helper ipKeyGenerator para normalizar IPv6
-    return ipKeyGenerator(req);
-  },
 });
 
 // Rate limiter para verificação de status de pagamento - muito permissivo
@@ -112,13 +80,6 @@ export const adminLimiter = rateLimit({
   },
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req) => {
-    // Para admins autenticados, usa userId
-    if (req.user?.id) {
-      return `admin-${req.user.id}`;
-    }
-    return req.ip;
-  }
 });
 
 // Rate limiter para APIs públicas (planos) - moderado
