@@ -8,7 +8,7 @@ class CarrinhoController {
       const usuarioId = req.user.id;
 
       const [itens] = await pool.execute(`
-        SELECT c.id, c.usuario_id, c.plano_id, c.periodo, c.quantidade, c.criado_em, c.atualizado_em,
+        SELECT c.id, c.usuario_id, c.plano_id, c.periodo, c.quantidade, c.cupom_codigo, c.cupom_desconto, c.criado_em, c.atualizado_em,
                p.nome, p.preco, p.duracao_dias, p.beneficios
         FROM carrinho_usuarios c
         JOIN planos p ON c.plano_id = p.id AND c.periodo = p.periodo
@@ -23,6 +23,8 @@ class CarrinhoController {
         plano_id: item.plano_id,
         periodo: item.periodo,
         quantidade: item.quantidade,
+        cupom_codigo: item.cupom_codigo,
+        cupom_desconto: item.cupom_desconto ? parseFloat(item.cupom_desconto) : 0,
         criado_em: item.criado_em,
         atualizado_em: item.atualizado_em,
         nome: item.nome,
@@ -163,6 +165,120 @@ class CarrinhoController {
       res.json({ message: "Quantidade atualizada" });
     } catch (error) {
       console.error("Erro ao atualizar quantidade:", error);
+      res.status(500).json({ error: "Erro interno do servidor" });
+    }
+  }
+
+  // Aplicar cupom ao carrinho
+  async aplicarCupom(req, res) {
+    try {
+      const usuarioId = req.user.id;
+      const { codigo } = req.body;
+
+      if (!codigo) {
+        return res.status(400).json({ error: "Código do cupom é obrigatório" });
+      }
+
+      // Buscar carrinho do usuário
+      const [cartItems] = await pool.execute(
+        `SELECT c.id, c.plano_id, c.quantidade, p.preco 
+         FROM carrinho_usuarios c
+         JOIN planos p ON c.plano_id = p.id AND c.periodo = p.periodo
+         WHERE c.usuario_id = ?`,
+        [usuarioId]
+      );
+
+      if (cartItems.length === 0) {
+        return res.status(404).json({ error: "Carrinho vazio" });
+      }
+
+      // Calcular valor total
+      const valorTotal = cartItems.reduce((total, item) => {
+        return total + (parseFloat(item.preco) * item.quantidade);
+      }, 0);
+
+      // Validar cupom
+      const [cupons] = await pool.execute(
+        'SELECT * FROM cupons WHERE codigo = ?',
+        [codigo.toUpperCase()]
+      );
+
+      if (cupons.length === 0) {
+        return res.status(404).json({ error: 'Cupom não encontrado' });
+      }
+
+      const cupom = cupons[0];
+      const agora = new Date();
+      const dataInicio = new Date(cupom.data_inicio);
+      const dataFim = new Date(cupom.data_fim);
+
+      // Verificar se está ativo
+      if (!cupom.ativo) {
+        return res.status(400).json({ error: 'Cupom inativo' });
+      }
+
+      // Verificar datas
+      if (agora < dataInicio) {
+        return res.status(400).json({ error: 'Cupom ainda não está disponível' });
+      }
+
+      if (agora > dataFim) {
+        return res.status(400).json({ error: 'Cupom expirado' });
+      }
+
+      // Verificar quantidade máxima de usos
+      if (cupom.quantidade_maxima !== null && cupom.quantidade_usada >= cupom.quantidade_maxima) {
+        return res.status(400).json({ error: 'Cupom esgotado' });
+      }
+
+      // Calcular desconto
+      let desconto = 0;
+      if (cupom.tipo === 'percentual') {
+        desconto = (valorTotal * parseFloat(cupom.valor)) / 100;
+      } else {
+        desconto = parseFloat(cupom.valor);
+      }
+
+      desconto = Math.min(desconto, valorTotal);
+
+      // Atualizar todos os itens do carrinho com o cupom
+      for (const item of cartItems) {
+        await pool.execute(
+          'UPDATE carrinho_usuarios SET cupom_codigo = ?, cupom_desconto = ? WHERE id = ?',
+          [cupom.codigo, desconto, item.id]
+        );
+      }
+
+      res.json({
+        message: 'Cupom aplicado com sucesso',
+        cupom: {
+          codigo: cupom.codigo,
+          tipo: cupom.tipo,
+          valor: cupom.valor,
+          desconto: parseFloat(desconto.toFixed(2)),
+          valor_original: parseFloat(valorTotal.toFixed(2)),
+          valor_final: parseFloat((valorTotal - desconto).toFixed(2))
+        }
+      });
+    } catch (error) {
+      console.error("Erro ao aplicar cupom:", error);
+      res.status(500).json({ error: "Erro interno do servidor" });
+    }
+  }
+
+  // Remover cupom do carrinho
+  async removerCupom(req, res) {
+    try {
+      const usuarioId = req.user.id;
+
+      await pool.execute(
+        'UPDATE carrinho_usuarios SET cupom_codigo = NULL, cupom_desconto = 0 WHERE usuario_id = ?',
+        [usuarioId]
+      );
+
+      res.json({ message: 'Cupom removido com sucesso' });
+    } catch (error) {
+      console.error("Erro ao remover cupom:", error);
       res.status(500).json({ error: "Erro interno do servidor" });
     }
   }

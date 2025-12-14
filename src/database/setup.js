@@ -136,6 +136,8 @@ async function setupDatabase() {
                 plano_id VARCHAR(36) NOT NULL,
                 periodo VARCHAR(20) NOT NULL,
                 quantidade INT DEFAULT 1,
+                cupom_codigo VARCHAR(50) NULL,
+                cupom_desconto DECIMAL(10, 2) DEFAULT 0,
                 criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 atualizado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                 FOREIGN KEY (usuario_id) REFERENCES usuarios(id) ON DELETE CASCADE,

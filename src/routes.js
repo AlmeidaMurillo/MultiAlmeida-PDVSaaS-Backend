@@ -95,8 +95,10 @@ routes.post('/api/carrinho', authMiddleware, CarrinhoController.adicionar);
 routes.delete('/api/carrinho/:id', authMiddleware, CarrinhoController.remover);
 routes.put('/api/carrinho/:id/quantidade', authMiddleware, CarrinhoController.atualizarQuantidade);
 routes.delete('/api/carrinho', authMiddleware, CarrinhoController.limpar);
+routes.post('/api/carrinho/cupom', authMiddleware, CarrinhoController.aplicarCupom);
+routes.delete('/api/carrinho/cupom', authMiddleware, CarrinhoController.removerCupom);
 
-// Rota pública para validar cupons
+// Rota pública para validar cupons (mantida para compatibilidade)
 routes.post('/api/cupons/validar', authMiddleware, CuponsController.validar);
 
 export default routes;

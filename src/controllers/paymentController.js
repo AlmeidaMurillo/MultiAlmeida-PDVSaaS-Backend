@@ -113,7 +113,7 @@ class PaymentController {
 
       // Busca informações do pagamento
       const [pagamentoRows] = await connection.execute(
-        "SELECT usuario_id, plano_id FROM pagamentos_assinatura WHERE id = ?",
+        "SELECT usuario_id, plano_id, cupom_id FROM pagamentos_assinatura WHERE id = ?",
         [nossoPagamentoId]
       );
 
@@ -122,7 +122,7 @@ class PaymentController {
         return res.status(404).send("Pagamento não encontrado.");
       }
 
-      const { usuario_id, plano_id } = pagamentoRows[0];
+      const { usuario_id, plano_id, cupom_id } = pagamentoRows[0];
 
       if (novoStatusPagamento === "aprovado") {
         // Busca informações do plano
@@ -151,6 +151,14 @@ class PaymentController {
           "UPDATE pagamentos_assinatura SET assinatura_id = ? WHERE id = ?",
           [assinaturaId, nossoPagamentoId]
         );
+
+        // Incrementa o uso do cupom se houver
+        if (cupom_id) {
+          await connection.execute(
+            "UPDATE cupons SET quantidade_usada = quantidade_usada + 1 WHERE id = ?",
+            [cupom_id]
+          );
+        }
 
         // Limpa o carrinho do usuário
         await connection.execute("DELETE FROM carrinho_usuarios WHERE usuario_id = ?", [usuario_id]);
@@ -380,14 +388,13 @@ class PaymentController {
   
   async initiatePayment(req, res) {
     const usuarioId = req.user.id;
-    const { cupom_codigo } = req.body;
     const connection = await pool.getConnection();
     await connection.beginTransaction();
 
     try {
       
       const [cartItems] = await connection.execute(
-        "SELECT plano_id, periodo FROM carrinho_usuarios WHERE usuario_id = ?",
+        "SELECT plano_id, periodo, cupom_codigo, cupom_desconto FROM carrinho_usuarios WHERE usuario_id = ?",
         [usuarioId]
       );
 
@@ -396,7 +403,7 @@ class PaymentController {
         return res.status(404).json({ message: "Carrinho vazio" });
       }
 
-      const { plano_id: planId, periodo } = cartItems[0];
+      const { plano_id: planId, periodo, cupom_codigo, cupom_desconto } = cartItems[0];
 
       const [planRows] = await connection.execute(
         "SELECT * FROM planos WHERE id = ?",
@@ -412,45 +419,31 @@ class PaymentController {
 
       
       let preco = Number(plano.preco.toString().replace(",", "."));
+      const precoOriginal = preco;
       let cupomId = null;
-      let valorDesconto = 0;
+      let valorDesconto = cupom_desconto ? parseFloat(cupom_desconto) : 0;
       let cupomInfo = null;
 
-      // Validar e aplicar cupom se fornecido
-      if (cupom_codigo) {
+      // Se houver cupom no carrinho, buscar detalhes e aplicar desconto
+      if (cupom_codigo && valorDesconto > 0) {
         const [cupons] = await connection.execute(
           'SELECT * FROM cupons WHERE codigo = ?',
-          [cupom_codigo.toUpperCase()]
+          [cupom_codigo]
         );
 
         if (cupons.length > 0) {
           const cupom = cupons[0];
-          const agora = new Date();
-          const dataInicio = new Date(cupom.data_inicio);
-          const dataFim = new Date(cupom.data_fim);
-
-          // Validar cupom
-          if (cupom.ativo && agora >= dataInicio && agora <= dataFim) {
-            if (cupom.quantidade_maxima === null || cupom.quantidade_usada < cupom.quantidade_maxima) {
-              // Calcular desconto
-              if (cupom.tipo === 'percentual') {
-                valorDesconto = (preco * parseFloat(cupom.valor)) / 100;
-              } else {
-                valorDesconto = parseFloat(cupom.valor);
-              }
-              
-              valorDesconto = Math.min(valorDesconto, preco);
-              preco = Math.max(0, preco - valorDesconto);
-              cupomId = cupom.id;
-              
-              cupomInfo = {
-                codigo: cupom.codigo,
-                tipo: cupom.tipo,
-                valor: cupom.valor,
-                desconto: valorDesconto
-              };
-            }
-          }
+          cupomId = cupom.id;
+          
+          // Aplicar desconto
+          preco = Math.max(0, preco - valorDesconto);
+          
+          cupomInfo = {
+            codigo: cupom.codigo,
+            tipo: cupom.tipo,
+            valor: cupom.valor,
+            desconto: valorDesconto
+          };
         }
       }
 
