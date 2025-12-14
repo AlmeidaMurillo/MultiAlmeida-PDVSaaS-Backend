@@ -7,7 +7,7 @@ import PaymentController from './controllers/paymentController.js';
 import PlanosController from './controllers/planosController.js';
 import CarrinhoController from './controllers/carrinhoController.js';
 import { authMiddleware, requireAdmin } from './middlewares/auth.js';
-import { authLimiter, refreshLimiter, paymentLimiter, publicApiLimiter } from './middlewares/rateLimit.js';
+import { authLimiter, refreshLimiter, paymentLimiter, publicApiLimiter, sessionCheckLimiter } from './middlewares/rateLimit.js';
 
 const routes = Router();
 
@@ -20,7 +20,7 @@ authRoutes.post('/login', authLimiter, [
 authRoutes.post('/refresh', refreshLimiter, AuthController.refresh);
 authRoutes.post('/logout', AuthController.logout);
 authRoutes.get('/status', authMiddleware, AuthController.checkAuthStatus);
-authRoutes.get('/has-refresh', AuthController.hasRefresh);
+authRoutes.get('/has-refresh', sessionCheckLimiter, AuthController.hasRefresh);
 routes.use('/api/auth', authRoutes);
 
 // Rotas de usuário

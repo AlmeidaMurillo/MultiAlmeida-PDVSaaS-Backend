@@ -8,9 +8,9 @@ class CarrinhoController {
       const usuarioId = req.user.id;
 
       const [itens] = await pool.execute(`
-        SELECT c.*, p.nome, p.preco, p.duracao_dias, p.beneficios
+        SELECT c.*, p.nome, p.preco, p.duracao_dias, p.beneficios, p.periodo
         FROM carrinho_usuarios c
-        JOIN planos p ON c.plano_id = p.id
+        JOIN planos p ON c.plano_id = p.id AND c.periodo = p.periodo
         WHERE c.usuario_id = ?
         ORDER BY c.criado_em DESC
       `, [usuarioId]);

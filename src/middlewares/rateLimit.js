@@ -42,6 +42,17 @@ export const refreshLimiter = rateLimit({
   legacyHeaders: false,
 });
 
+// Rate limiter para verificação de sessão (has-refresh) - muito permissivo
+export const sessionCheckLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutos
+  max: 100, // Máximo 100 verificações por IP (permite verificações frequentes)
+  message: {
+    error: 'Muitas verificações de sessão. Aguarde alguns minutos.',
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 // Rate limiter para criação de pagamentos - restritivo
 export const paymentLimiter = rateLimit({
   windowMs: 60 * 60 * 1000, // 1 hora
