@@ -9,9 +9,11 @@ class CarrinhoController {
 
       const [itens] = await pool.execute(`
         SELECT c.id, c.usuario_id, c.plano_id, c.periodo, c.quantidade, c.cupom_codigo, c.cupom_desconto, c.criado_em, c.atualizado_em,
-               p.nome, p.preco, p.duracao_dias, p.beneficios
+               p.nome, p.preco, p.duracao_dias, p.beneficios,
+               cup.tipo as cupom_tipo, cup.valor as cupom_valor
         FROM carrinho_usuarios c
         JOIN planos p ON c.plano_id = p.id AND c.periodo = p.periodo
+        LEFT JOIN cupons cup ON c.cupom_codigo = cup.codigo
         WHERE c.usuario_id = ?
         ORDER BY c.criado_em DESC
       `, [usuarioId]);
@@ -25,6 +27,8 @@ class CarrinhoController {
         quantidade: item.quantidade,
         cupom_codigo: item.cupom_codigo,
         cupom_desconto: item.cupom_desconto ? parseFloat(item.cupom_desconto) : 0,
+        cupom_tipo: item.cupom_tipo,
+        cupom_valor: item.cupom_valor ? parseFloat(item.cupom_valor) : null,
         criado_em: item.criado_em,
         atualizado_em: item.atualizado_em,
         nome: item.nome,
