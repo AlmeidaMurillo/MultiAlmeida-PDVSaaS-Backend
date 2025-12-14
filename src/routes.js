@@ -8,7 +8,7 @@ import PlanosController from './controllers/planosController.js';
 import CarrinhoController from './controllers/carrinhoController.js';
 import CuponsController from './controllers/cuponsController.js';
 import { authMiddleware, requireAdmin } from './middlewares/auth.js';
-import { authLimiter, refreshLimiter, paymentLimiter, publicApiLimiter, sessionCheckLimiter, paymentStatusLimiter } from './middlewares/rateLimit.js';
+import { authLimiter, refreshLimiter, paymentLimiter, publicApiLimiter, sessionCheckLimiter, paymentStatusLimiter, adminLimiter } from './middlewares/rateLimit.js';
 
 const routes = Router();
 
@@ -56,8 +56,9 @@ routes.post(
   AuthController.criarConta
 );
 
-// Rotas administrativas
+// Rotas administrativas com rate limiter específico
 const adminRoutes = Router();
+adminRoutes.use(adminLimiter); // Aplica rate limiter específico para admins
 adminRoutes.get('/auth/status', authMiddleware, requireAdmin, AuthController.checkAdminAuthStatus);
 adminRoutes.post('/planos', authMiddleware, requireAdmin, PlanosController.create);
 adminRoutes.get('/planos', authMiddleware, requireAdmin, PlanosController.list);

@@ -4,6 +4,8 @@ import { validationResult } from 'express-validator';
 import pool from '../db.js';
 import { v4 as uuidv4 } from 'uuid';
 import crypto from 'crypto';
+import { logLoginAttempt, logPasswordChange, logSecurityEvent, SecurityLevel, SecurityEvent } from '../utils/securityLogger.js';
+import { sanitizeEmail, sanitizeName } from '../utils/sanitize.js';
 
 
 const ACCESS_TOKEN_SECRET = process.env.ACCESS_TOKEN_SECRET;
@@ -98,22 +100,39 @@ class AuthController {
       return res.status(400).json({ errors: errors.array() });
     }
 
-    const { email, senha } = req.body;
+    let { email, senha } = req.body;
+    
+    // Sanitiza entrada
+    email = sanitizeEmail(email);
+    
+    if (!email) {
+      return res.status(400).json({ error: 'Email inválido' });
+    }
 
     try {
       const [userRows] = await pool.execute(
         'SELECT id, nome, email, senha, papel FROM usuarios WHERE email = ?',
         [email]
       );
-      if (userRows.length === 0) {
+      
+      // Proteção contra timing attacks - sempre faz hash mesmo se usuário não existir
+      const dummyHash = '$2a$10$abcdefghijklmnopqrstuv.wxyzABCDEFGHIJKLMNOPQRSTUVWXYZ012';
+      const hashToCompare = userRows.length > 0 ? userRows[0].senha : dummyHash;
+      const senhaCorreta = await bcrypt.compare(senha, hashToCompare);
+      
+      if (userRows.length === 0 || !senhaCorreta) {
+        logLoginAttempt(false, email, req.ip, req.headers['user-agent']);
+        
+        // Delay para dificultar brute force
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
         return res.status(401).json({ error: 'Email ou senha incorretos' });
       }
 
       const usuario = userRows[0];
-      const senhaCorreta = await bcrypt.compare(senha, usuario.senha);
-      if (!senhaCorreta) {
-        return res.status(401).json({ error: 'Email ou senha incorretos' });
-      }
+      
+      // Log de login bem-sucedido
+      logLoginAttempt(true, email, req.ip, req.headers['user-agent'], usuario.id);
 
       const accessToken = await generateAccessToken(usuario);
       const refreshToken = crypto.randomBytes(40).toString('hex');
@@ -197,11 +216,24 @@ class AuthController {
     const { refreshToken } = req.cookies;
 
     try {
+      let userId = null;
+      
       // Se houver refresh token, desativa a sessão no banco
       if (refreshToken) {
         const validSession = await findSessionByToken(refreshToken);
         if (validSession) {
+          userId = validSession.usuario_id;
           await pool.execute('UPDATE sessoes_usuarios SET esta_ativo = FALSE WHERE id = ?', [validSession.id]);
+          
+          // Log de logout
+          logSecurityEvent(
+            SecurityLevel.INFO,
+            SecurityEvent.LOGOUT,
+            {
+              userId,
+              ip: req.ip
+            }
+          );
         }
       }
 
@@ -321,20 +353,41 @@ class AuthController {
         papel: userPapel,
       });
 
-    } catch (error) {
-      console.error("Erro ao verificar status da autenticação:", error);
-      return res.status(500).json({ error: "Erro interno do servidor" });
-    }
-  }
+    } let { nome, email, senha } = req.body;
 
-  async criarConta(req, res) {
-    try {
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        return res.status(400).json({ errors: errors.array() });
+      if (!nome || !email || !senha) {
+        return res
+          .status(400)
+          .json({ error: "Nome, email e senha são obrigatórios" });
+      }
+      
+      // Sanitiza entradas
+      nome = sanitizeName(nome);
+      email = sanitizeEmail(email);
+      
+      if (!nome || !email) {
+        return res.status(400).json({ error: "Nome ou email inválido" });
       }
 
-      const { nome, email, senha } = req.body;
+      const [existingUsers] = await pool.execute(
+        "SELECT id FROM usuarios WHERE email = ?",
+        [email]
+      );
+
+      if (Array.isArray(existingUsers) && existingUsers.length > 0) {
+        logSecurityEvent(
+          SecurityLevel.WARNING,
+          SecurityEvent.SUSPICIOUS_ACTIVITY,
+          {
+            event: 'Tentativa de registro com email existente',
+            email,
+            ip: req.ip
+          }
+        );
+        
+        // Delay para dificultar enumeração de emails
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
 
       if (!nome || !email || !senha) {
         return res
@@ -372,14 +425,35 @@ class AuthController {
       const refreshTokenExpires = new Date(
         Date.now() + REFRESH_TOKEN_EXPIRES_IN_DAYS * 24 * 60 * 60 * 1000
       );
-
+// Log de criação de conta
+      logSecurityEvent(
+        SecurityLevel.INFO,
+        SecurityEvent.LOGIN_SUCCESS,
+        {
+          event: 'Nova conta criada',
+          userId: usuario.id,
+          email: usuario.email,
+          ip: req.ip
+        }
+      );
       
-      await pool.execute(
-        `INSERT INTO sessoes_usuarios 
-         (id, usuario_id, hash_token, expira_em, info_dispositivo, info_navegador, endereco_ip, papel, esta_ativo) 
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, TRUE)`,
-        [
-          uuidv4(),
+      return res.status(201).json({
+        message: "Conta criada com sucesso",
+        accessToken,
+        user: { id: usuario.id, nome: usuario.nome, email: usuario.email, papel: usuario.papel },
+      });
+
+    } catch (error) {
+      console.error("Erro ao criar conta:", error);
+      logSecurityEvent(
+        SecurityLevel.CRITICAL,
+        SecurityEvent.SUSPICIOUS_ACTIVITY,
+        {
+          event: 'Erro ao criar conta',
+          error: error.message,
+          ip: req.ip
+        }
+      
           usuario.id,
           refreshTokenHash,
           refreshTokenExpires,

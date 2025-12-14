@@ -18,13 +18,6 @@ class CarrinhoController {
         ORDER BY c.criado_em DESC
       `, [usuarioId]);
 
-      console.log(`[DEBUG] Carrinho carregado para usuário ${usuarioId}:`, itens.map(i => ({
-        id: i.id,
-        cupom_codigo: i.cupom_codigo,
-        cupom_desconto: i.cupom_desconto,
-        cupom_tipo: i.cupom_tipo
-      })));
-
       // Formata os itens com os dados do plano parseados
       const itensFormatados = itens.map(item => ({
         id: item.id,
@@ -204,12 +197,19 @@ class CarrinhoController {
 
       // Buscar carrinho do usuário
       const [cartItems] = await pool.execute(
-        `SELECT c.id, c.plano_id, c.quantidade, p.preco 
+        `SELECT c.id, c.plano_id, c.quantidade, c.cupom_codigo, p.preco 
          FROM carrinho_usuarios c
          JOIN planos p ON c.plano_id = p.id AND c.periodo = p.periodo
          WHERE c.usuario_id = ?`,
         [usuarioId]
       );
+
+      // Verificar se já existe um cupom aplicado
+      if (cartItems.length > 0 && cartItems[0].cupom_codigo) {
+        return res.status(400).json({ 
+          error: "Já existe um cupom aplicado. Remova-o primeiro para aplicar outro cupom." 
+        });
+      }
 
       if (cartItems.length === 0) {
         return res.status(404).json({ error: "Carrinho vazio" });

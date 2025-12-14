@@ -8,6 +8,8 @@ import apicache from 'apicache';
 import cookieParser from 'cookie-parser';
 import routes from './routes.js';
 import { generalLimiter } from './middlewares/rateLimit.js';
+import { sanitizeMiddleware } from './utils/sanitize.js';
+import { securityLoggerMiddleware, attackDetectionMiddleware } from './utils/securityLogger.js';
 
 const app = express();
 
@@ -23,6 +25,8 @@ app.use(helmet({
       styleSrc: ["'self'", "'unsafe-inline'"],
       scriptSrc: ["'self'"],
       imgSrc: ["'self'", 'data:', 'https:'],
+      objectSrc: ["'none'"],
+      upgradeInsecureRequests: [],
     },
   },
   hsts: {
@@ -30,6 +34,10 @@ app.use(helmet({
     includeSubDomains: true,
     preload: true
   },
+  frameguard: { action: 'deny' }, // Proteção contra clickjacking
+  noSniff: true, // Previne MIME sniffing
+  xssFilter: true, // Ativa proteção XSS do navegador
+  hidePoweredBy: true, // Remove header X-Powered-By
 }));
 
 const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
@@ -63,13 +71,46 @@ app.use(
   })
 );
 
-app.use(express.json({ limit: '10kb' }));
+// Limita tamanho de payload JSON para prevenir ataques
+app.use(express.json({ 
+  limit: '10kb',
+  strict: true, // Aceita apenas arrays e objetos
+}));
+
+app.use(express.urlencoded({ 
+  extended: true, 
+  limit: '10kb' 
+}));
+
 app.use(cookieParser());
+
+// Middleware de sanitização básica de headers
+app.use((req, res, next) => {
+  // Remove headers potencialmente perigosos
+  delete req.headers['x-forwarded-host'];
+  
+  // Valida Content-Type para requests com body
+  if (['POST', 'PUT', 'PATCH'].includes(req.method)) {
+    const contentType = req.headers['content-type'];
+    if (contentType && !contentType.includes('application/json') && !contentType.includes('application/x-www-form-urlencoded')) {
+      return res.status(415).json({ error: 'Content-Type não suportado' });
+    }
+  }
+  
+  next();
+});
 
 // Rate limiter geral aplicado a todas as rotas
 app.use(generalLimiter);
 
+// Middleware de logging de segurança
+app.use(securityLoggerMiddleware);
 
+// Middleware de detecção de ataques (SQL injection, XSS, etc)
+app.use(attackDetectionMiddleware);
+
+// Middleware de sanitização
+app.use(sanitizeMiddleware);
 
 const cache = apicache.middleware;
 app.use('/api/planos', cache('60 seconds'));

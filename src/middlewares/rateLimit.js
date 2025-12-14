@@ -1,8 +1,24 @@
 import rateLimit from 'express-rate-limit';
+import crypto from 'crypto';
 
 // Lê as variáveis de ambiente para rate limiting
 const RATE_LIMIT_WINDOW = parseInt(process.env.RATE_LIMIT_WINDOW || '15', 10); // em minutos
-const RATE_LIMIT_MAX = parseInt(process.env.RATE_LIMIT_MAX || '100', 10); // requisições
+const RATE_LIMIT_MAX = parseInt(process.env.RATE_LIMIT_MAX || '500', 10); // requisições
+
+// Função para gerar chave segura de rate limiting
+const secureKeyGenerator = (req) => {
+  const ip = req.ip || req.connection.remoteAddress;
+  const userId = req.user?.id || 'anonymous';
+  const userAgent = req.headers['user-agent'] || 'unknown';
+  
+  const hash = crypto
+    .createHash('sha256')
+    .update(`${ip}-${userId}-${userAgent}`)
+    .digest('hex')
+    .substring(0, 16);
+  
+  return `${ip}-${userId}-${hash}`;
+};
 
 // Rate limiter geral - mais permissivo
 export const generalLimiter = rateLimit({
@@ -13,9 +29,13 @@ export const generalLimiter = rateLimit({
   },
   standardHeaders: true,
   legacyHeaders: false,
-  // Pula rate limiter para requisições de admin (opcional)
-  skip: (req) => {
-    return req.user && req.user.papel === 'admin';
+  keyGenerator: secureKeyGenerator,
+  handler: (req, res) => {
+    console.warn(`⚠️ Rate limit atingido: ${secureKeyGenerator(req)}`);
+    res.status(429).json({
+      error: 'Muitas requisições. Aguarde alguns minutos.',
+      retryAfter: Math.ceil(RATE_LIMIT_WINDOW * 60)
+    });
   }
 });
 
@@ -81,6 +101,24 @@ export const paymentStatusLimiter = rateLimit({
   },
   standardHeaders: true,
   legacyHeaders: false,
+});
+
+// Rate limiter para rotas administrativas - muito permissivo
+export const adminLimiter = rateLimit({
+  windowMs: 5 * 60 * 1000, // 5 minutos
+  max: 1000, // Máximo 1000 requisições (admins precisam de mais liberdade)
+  message: {
+    error: 'Limite de requisições administrativas atingido.',
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => {
+    // Para admins autenticados, usa userId
+    if (req.user?.id) {
+      return `admin-${req.user.id}`;
+    }
+    return req.ip;
+  }
 });
 
 // Rate limiter para APIs públicas (planos) - moderado

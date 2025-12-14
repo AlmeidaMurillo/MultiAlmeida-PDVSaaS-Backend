@@ -12,9 +12,25 @@ const pool = mysql.createPool({
   
   timezone: 'Z',
   
+  // Configurações de pool otimizadas
   waitForConnections: true,
   connectionLimit: 10,
   queueLimit: 0,
+  
+  // Timeouts para prevenir conexões penduradas
+  connectTimeout: 10000, // 10 segundos
+  acquireTimeout: 10000, // 10 segundos
+  timeout: 60000, // 60 segundos
+  
+  // Previne SQL injection através de prepared statements
+  multipleStatements: false, // Desabilita múltiplos statements
+  
+  // Configurações de charset seguras
+  charset: 'utf8mb4',
+  
+  // Pool event handlers para monitoring
+  enableKeepAlive: true,
+  keepAliveInitialDelay: 0,
 });
 
 export default pool;

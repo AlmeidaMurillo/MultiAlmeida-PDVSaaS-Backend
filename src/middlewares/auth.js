@@ -1,31 +1,54 @@
 import jwt from 'jsonwebtoken';
 import pool from '../db.js';
+import crypto from 'crypto';
 
 const ACCESS_TOKEN_SECRET = process.env.ACCESS_TOKEN_SECRET;
 if (!ACCESS_TOKEN_SECRET) {
   throw new Error("ACCESS_TOKEN_SECRET não definido nas variáveis de ambiente");
 }
 
+// Proteção contra timing attacks
+const constantTimeCompare = (a, b) => {
+  return crypto.timingSafeEqual(
+    Buffer.from(a, 'utf8'),
+    Buffer.from(b, 'utf8')
+  );
+};
+
 export async function authMiddleware(req, res, next) {
   let token = null;
-  if (req.cookies && req.cookies.accessToken) {
+  
+  // Prioriza Authorization header (mais seguro)
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    token = authHeader.substring(7);
+  } else if (req.cookies && req.cookies.accessToken) {
     token = req.cookies.accessToken;
-  } else {
-    const authHeader = req.headers.authorization;
-    if (authHeader) {
-      token = authHeader.split(' ')[1];
-    }
   }
 
   if (!token) {
     return res.status(401).json({ error: "Token de acesso não fornecido." });
   }
 
-  try {
-    const decoded = jwt.verify(token, ACCESS_TOKEN_SECRET);
+  // Validação básica do formato do token
+  if (token.split('.').length !== 3) {
+    return res.status(401).json({ error: "Token malformado." });
+  }
 
+  try {
+    const decoded = jwt.verify(token, ACCESS_TOKEN_SECRET, {
+      algorithms: ['HS256'], // Força apenas algoritmo esperado
+      complete: false
+    });
+
+    // Validações adicionais do payload
+    if (!decoded.id || !decoded.email || !decoded.papel) {
+      return res.status(401).json({ error: 'Token inválido: payload incompleto.' });
+    }
+
+    // Verifica sessão ativa no banco
     const [sessionRows] = await pool.execute(
-      'SELECT 1 FROM sessoes_usuarios WHERE usuario_id = ? AND esta_ativo = TRUE',
+      'SELECT usuario_id, papel FROM sessoes_usuarios WHERE usuario_id = ? AND esta_ativo = TRUE AND expira_em > NOW()',
       [decoded.id]
     );
 
@@ -36,12 +59,22 @@ export async function authMiddleware(req, res, next) {
       return res.status(401).json({ error: 'Sessão inválida ou expirada.' });
     }
 
+    // Valida que o papel no token corresponde ao papel na sessão
+    if (sessionRows[0].papel !== decoded.papel) {
+      console.warn(`⚠️ Papel inconsistente para usuário ${decoded.id}`);
+      return res.status(401).json({ error: 'Sessão inválida.' });
+    }
+
     req.user = decoded;
     next();
   } catch (err) {
     if (req.cookies && req.cookies.accessToken) {
       res.clearCookie('accessToken');
     }
+    
+    // Log de segurança
+    console.warn(`⚠️ Falha de autenticação: ${err.message} | IP: ${req.ip}`);
+    
     if (err instanceof jwt.TokenExpiredError) {
       return res.status(401).json({ error: "Token de acesso expirado." });
     }

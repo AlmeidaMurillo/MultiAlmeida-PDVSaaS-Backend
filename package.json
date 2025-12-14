@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "nodemon src/server.js",
     "start": "node src/server.js",
-    "setup": "node src/database/setup.js"
+    "setup": "node src/database/setup.js",
+    "test:security": "node test-security.js"
   },
   "keywords": [],
   "author": "",
