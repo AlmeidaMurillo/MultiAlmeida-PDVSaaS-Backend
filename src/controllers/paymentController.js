@@ -421,6 +421,13 @@ class PaymentController {
       // Tempo de expiração configurável (2 minutos para teste)
       const PAYMENT_EXPIRATION_MINUTES = parseInt(process.env.PAYMENT_EXPIRATION_MINUTES || '2', 10);
       const expirationTime = new Date(Date.now() + PAYMENT_EXPIRATION_MINUTES * 60 * 1000);
+      
+      console.log('=== CRIANDO PAGAMENTO ===');
+      console.log('Data atual servidor:', new Date().toString());
+      console.log('Data atual UTC:', new Date().toISOString());
+      console.log('Offset timezone:', new Date().getTimezoneOffset(), 'minutos');
+      console.log('Data expiração:', expirationTime.toISOString());
+      console.log('========================');
 
       const paymentClient = new Payment(client);
 
