@@ -175,22 +175,53 @@ class PaymentController {
 
   
   async getPaymentStatus(req, res) {
+    const connection = await pool.getConnection();
+    
     try {
       const { id } = req.params;
-      const [pagamento] = await pool.execute(
-        "SELECT status_pagamento as status FROM pagamentos_assinatura WHERE id = ?",
+      const [pagamento] = await connection.execute(
+        "SELECT status_pagamento as status, data_expiracao, assinatura_id FROM pagamentos_assinatura WHERE id = ?",
         [id]
       );
 
       if (Array.isArray(pagamento) && pagamento.length > 0) {
-        return res.status(200).json({ status: pagamento[0].status });
+        const payment = pagamento[0];
+        
+        // Verifica se o pagamento expirou
+        if (
+          payment.data_expiracao &&
+          new Date() > new Date(payment.data_expiracao) &&
+          payment.status === "pendente"
+        ) {
+          await connection.beginTransaction();
+          
+          // Atualiza o status do pagamento para expirado
+          await connection.execute(
+            "UPDATE pagamentos_assinatura SET status_pagamento = 'expirado' WHERE id = ?",
+            [id]
+          );
+          
+          // Atualiza o status da assinatura para inativa
+          await connection.execute(
+            "UPDATE assinaturas SET status = 'inativa' WHERE id = ? AND status = 'pendente'",
+            [payment.assinatura_id]
+          );
+          
+          await connection.commit();
+          payment.status = "expirado";
+        }
+        
+        return res.status(200).json({ status: payment.status });
       } else {
         return res.status(404).json({ message: "Pagamento não encontrado" });
       }
     } catch (error) {
+      await connection.rollback();
       return res
         .status(500)
         .json({ message: "Erro ao buscar status do pagamento", error });
+    } finally {
+      connection.release();
     }
   }
 
@@ -224,16 +255,36 @@ class PaymentController {
 
       const data = pagamento[0];
 
+      // Verifica e atualiza status se expirou
       if (
         data.expirationTime &&
         new Date() > new Date(data.expirationTime) &&
         data.status === "pendente"
       ) {
-        await pool.execute(
-          "UPDATE pagamentos_assinatura SET status_pagamento = ? WHERE id = ?",
-          ["expirado", id]
-        );
-        data.status = "expirado";
+        const connection = await pool.getConnection();
+        await connection.beginTransaction();
+        
+        try {
+          // Atualiza o status do pagamento
+          await connection.execute(
+            "UPDATE pagamentos_assinatura SET status_pagamento = ? WHERE id = ?",
+            ["expirado", id]
+          );
+          
+          // Atualiza o status da assinatura para inativa (não cancela para manter no carrinho)
+          await connection.execute(
+            "UPDATE assinaturas SET status = 'inativa' WHERE id = (SELECT assinatura_id FROM pagamentos_assinatura WHERE id = ?) AND status = 'pendente'",
+            [id]
+          );
+          
+          await connection.commit();
+          data.status = "expirado";
+        } catch (err) {
+          await connection.rollback();
+          console.error("Erro ao atualizar status de expiração:", err);
+        } finally {
+          connection.release();
+        }
       }
 
       return res.status(200).json(data);

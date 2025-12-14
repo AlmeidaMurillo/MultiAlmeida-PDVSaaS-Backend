@@ -72,6 +72,17 @@ export const paymentLimiter = rateLimit({
   },
 });
 
+// Rate limiter para verificação de status de pagamento - muito permissivo
+export const paymentStatusLimiter = rateLimit({
+  windowMs: 1 * 60 * 1000, // 1 minuto
+  max: 30, // Máximo 30 verificações por minuto (permite polling a cada 2 segundos)
+  message: {
+    error: 'Muitas verificações de status. Aguarde um momento.',
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 // Rate limiter para APIs públicas (planos) - moderado
 export const publicApiLimiter = rateLimit({
   windowMs: 5 * 60 * 1000, // 5 minutos

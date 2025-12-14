@@ -7,7 +7,7 @@ import PaymentController from './controllers/paymentController.js';
 import PlanosController from './controllers/planosController.js';
 import CarrinhoController from './controllers/carrinhoController.js';
 import { authMiddleware, requireAdmin } from './middlewares/auth.js';
-import { authLimiter, refreshLimiter, paymentLimiter, publicApiLimiter, sessionCheckLimiter } from './middlewares/rateLimit.js';
+import { authLimiter, refreshLimiter, paymentLimiter, publicApiLimiter, sessionCheckLimiter, paymentStatusLimiter } from './middlewares/rateLimit.js';
 
 const routes = Router();
 
@@ -69,8 +69,8 @@ routes.use('/api/admin', adminRoutes);
 routes.post('/api/payments/initiate', authMiddleware, paymentLimiter, PaymentController.initiatePayment);
 routes.post('/api/payments/qr-code', authMiddleware, paymentLimiter, PaymentController.generateQrCode);
 routes.post('/api/payments/webhook', PaymentController.handleWebhook);
-routes.get('/api/payments/status/:id', PaymentController.getPaymentStatus);
-routes.get('/api/payments/:id', PaymentController.getPaymentDetails);
+routes.get('/api/payments/status/:id', paymentStatusLimiter, PaymentController.getPaymentStatus);
+routes.get('/api/payments/:id', paymentStatusLimiter, PaymentController.getPaymentDetails);
 routes.post('/api/payments/:id/expire', PaymentController.expirePayment);
 
 // Rotas de planos (públicas)
