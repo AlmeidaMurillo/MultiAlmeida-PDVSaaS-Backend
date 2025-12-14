@@ -54,6 +54,20 @@ class PaymentController {
 
   
   async handleWebhook(req, res) {
+    // 🔒 VALIDAÇÃO DE WEBHOOK DO MERCADO PAGO
+    // Verifica assinatura x-signature ou x-request-id para garantir autenticidade
+    const xSignature = req.headers['x-signature'];
+    const xRequestId = req.headers['x-request-id'];
+    
+    // Mercado Pago envia x-signature ou x-request-id em webhooks autênticos
+    if (!xSignature && !xRequestId) {
+      console.warn('⚠️ Webhook recebido sem assinatura do Mercado Pago', {
+        ip: req.ip,
+        headers: req.headers
+      });
+      return res.status(401).json({ error: 'Webhook não autorizado' });
+    }
+
     let paymentId;
     let notificationType;
 

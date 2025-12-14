@@ -88,16 +88,10 @@ routes.post('/api/payments/qr-code', authMiddleware, paymentLimiter, PaymentCont
 routes.post('/api/payments/webhook', PaymentController.handleWebhook);
 routes.get('/api/payments/status/:id', paymentStatusLimiter, PaymentController.getPaymentStatus);
 routes.get('/api/payments/:id', paymentStatusLimiter, PaymentController.getPaymentDetails);
-routes.post('/api/payments/:id/expire', PaymentController.expirePayment);
+routes.post('/api/payments/:id/expire', paymentLimiter, PaymentController.expirePayment);
 
-// Rotas de planos (públicas)
+// Rotas de planos (públicas - para landing page)
 routes.get('/api/planos', publicApiLimiter, PlanosController.list);
-
-// Rotas administrativas
-routes.post('/api/admin/planos', authMiddleware, requireAdmin, PlanosController.create);
-routes.get('/api/admin/planos', authMiddleware, requireAdmin, PlanosController.list);
-routes.put('/api/admin/planos/:id', authMiddleware, requireAdmin, PlanosController.update);
-routes.delete('/api/admin/planos/:id', authMiddleware, requireAdmin, PlanosController.delete);
 
 // Rotas de carrinho (rotas específicas ANTES das genéricas)
 routes.post('/api/carrinho/cupom', authMiddleware, CarrinhoController.aplicarCupom);
