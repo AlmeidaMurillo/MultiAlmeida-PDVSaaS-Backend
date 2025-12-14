@@ -111,21 +111,21 @@ class PaymentController {
         return res.status(404).send("Registro interno não encontrado.");
       }
 
+      // Busca informações do pagamento
       const [pagamentoRows] = await connection.execute(
-        "SELECT a.id as assinatura_id, a.plano_id FROM assinaturas a JOIN pagamentos_assinatura pa ON a.id = pa.assinatura_id WHERE pa.id = ?",
+        "SELECT usuario_id, plano_id FROM pagamentos_assinatura WHERE id = ?",
         [nossoPagamentoId]
       );
 
       if (!pagamentoRows.length) {
         await connection.rollback();
-        return res
-          .status(404)
-          .send("Assinatura correspondente não encontrada.");
+        return res.status(404).send("Pagamento não encontrado.");
       }
 
-      const { assinatura_id, plano_id } = pagamentoRows[0];
+      const { usuario_id, plano_id } = pagamentoRows[0];
 
       if (novoStatusPagamento === "aprovado") {
+        // Busca informações do plano
         const [planoRows] = await connection.execute(
           "SELECT duracao_dias FROM planos WHERE id = ?",
           [plano_id]
@@ -138,32 +138,29 @@ class PaymentController {
 
         const { duracao_dias } = planoRows[0];
 
+        // CRIA a assinatura apenas quando aprovado
+        const assinaturaId = uuidv4();
         await connection.execute(
-          `UPDATE assinaturas 
-           SET status = 'ativa', data_assinatura = NOW(), data_vencimento = DATE_ADD(NOW(), INTERVAL ? DAY) 
-           WHERE id = ?`,
-          [duracao_dias, assinatura_id]
+          `INSERT INTO assinaturas (id, usuario_id, plano_id, status, data_assinatura, data_vencimento) 
+           VALUES (?, ?, ?, 'ativa', NOW(), DATE_ADD(NOW(), INTERVAL ? DAY))`,
+          [assinaturaId, usuario_id, plano_id, duracao_dias]
         );
 
-        
-        const [assinaturaRows] = await connection.execute(
-          "SELECT usuario_id FROM assinaturas WHERE id = ?",
-          [assinatura_id]
+        // Vincula a assinatura ao pagamento
+        await connection.execute(
+          "UPDATE pagamentos_assinatura SET assinatura_id = ? WHERE id = ?",
+          [assinaturaId, nossoPagamentoId]
         );
-        
-        if (assinaturaRows.length > 0) {
-          const usuarioId = assinaturaRows[0].usuario_id;
-          await connection.execute("DELETE FROM carrinho_usuarios WHERE usuario_id = ?", [usuarioId]);
-        }
+
+        // Limpa o carrinho do usuário
+        await connection.execute("DELETE FROM carrinho_usuarios WHERE usuario_id = ?", [usuario_id]);
 
       } else if (
         novoStatusPagamento === "reprovado" ||
         novoStatusPagamento === "cancelado"
       ) {
-        await connection.execute(
-          `UPDATE assinaturas SET status = 'cancelada' WHERE id = ? AND status = 'pendente'`,
-          [assinatura_id]
-        );
+        // Para pagamentos reprovados/cancelados, não faz nada
+        // A assinatura nunca foi criada
       }
 
       await connection.commit();
@@ -211,11 +208,13 @@ class PaymentController {
               [id]
             );
             
-            // Atualiza o status da assinatura para inativa
-            await connection.execute(
-              "UPDATE assinaturas SET status = 'inativa' WHERE id = ? AND status = 'pendente'",
-              [payment.assinatura_id]
-            );
+            // Se houver assinatura criada (não deveria ter para pagamentos pendentes), atualiza
+            if (payment.assinatura_id) {
+              await connection.execute(
+                "UPDATE assinaturas SET status = 'inativa' WHERE id = ?",
+                [payment.assinatura_id]
+              );
+            }
             
             await connection.commit();
             payment.status = "expirado";
@@ -251,15 +250,14 @@ class PaymentController {
             pa.qr_code as qrCode, 
             pa.qr_code_text as qrCodeText, 
             pa.data_expiracao as expirationTime,
-            a.usuario_id as usuarioId,
-            a.plano_id as planId,
+            pa.usuario_id as usuarioId,
+            pa.plano_id as planId,
             p.nome as nomePlano,
             p.periodo as periodoPlano,
             p.preco as precoPlano,
             p.duracao_dias as duracaoDiasPlano
          FROM pagamentos_assinatura pa
-         JOIN assinaturas a ON pa.assinatura_id = a.id
-         JOIN planos p ON a.plano_id = p.id
+         JOIN planos p ON pa.plano_id = p.id
          WHERE pa.id = ?`,
         [id]
       );
@@ -289,11 +287,18 @@ class PaymentController {
             ["expirado", id]
           );
           
-          // Atualiza o status da assinatura para inativa (não cancela para manter no carrinho)
-          await expConnection.execute(
-            "UPDATE assinaturas SET status = 'inativa' WHERE id = (SELECT assinatura_id FROM pagamentos_assinatura WHERE id = ?) AND status = 'pendente'",
+          // Se houver assinatura vinculada, atualiza (não deveria ter para pendente)
+          const [assinatura] = await expConnection.execute(
+            "SELECT assinatura_id FROM pagamentos_assinatura WHERE id = ?",
             [id]
           );
+          
+          if (assinatura.length > 0 && assinatura[0].assinatura_id) {
+            await expConnection.execute(
+              "UPDATE assinaturas SET status = 'inativa' WHERE id = ?",
+              [assinatura[0].assinatura_id]
+            );
+          }
           
           await expConnection.commit();
           data.status = "expirado";
@@ -340,10 +345,13 @@ class PaymentController {
         [id]
       );
 
-      await connection.execute(
-        "UPDATE assinaturas SET status = 'inativa' WHERE id = ? AND status = 'ativa'",
-        [assinatura_id]
-      );
+      // Só atualiza assinatura se existir (não deveria existir para pendente)
+      if (assinatura_id) {
+        await connection.execute(
+          "UPDATE assinaturas SET status = 'inativa' WHERE id = ?",
+          [assinatura_id]
+        );
+      }
 
       await connection.commit();
       return res.status(200).json({
@@ -395,12 +403,6 @@ class PaymentController {
       
       const preco = Number(plano.preco.toString().replace(",", "."));
 
-      const assinaturaId = uuidv4();
-      await connection.execute(
-        "INSERT INTO assinaturas (id, usuario_id, plano_id, status) VALUES (?, ?, ?, 'pendente')",
-        [assinaturaId, usuarioId, planId]
-      );
-
       const paymentId = uuidv4();
       // Tempo de expiração configurável (padrão: 2 minutos)
       const PAYMENT_EXPIRATION_MINUTES = parseInt(process.env.PAYMENT_EXPIRATION_MINUTES || '2', 10);
@@ -428,14 +430,16 @@ class PaymentController {
       const qrCodeText =
         response.point_of_interaction?.transaction_data?.qr_code || "";
 
+      // Agora salva apenas o pagamento (sem assinatura)
       await connection.execute(
         `INSERT INTO pagamentos_assinatura (
-          id, assinatura_id, valor, metodo_pagamento, status_pagamento,
+          id, usuario_id, plano_id, valor, metodo_pagamento, status_pagamento,
           data_expiracao, qr_code, qr_code_text
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           paymentId,
-          assinaturaId,
+          usuarioId,
+          planId,
           preco,
           "pix",
           "pendente",
@@ -492,12 +496,10 @@ class PaymentController {
             e.nome AS empresa_nome
         FROM
             pagamentos_assinatura pa
-        JOIN
-            assinaturas a ON pa.assinatura_id = a.id
         LEFT JOIN
-            usuarios u ON a.usuario_id = u.id
+            usuarios u ON pa.usuario_id = u.id
         LEFT JOIN
-            planos p ON a.plano_id = p.id
+            planos p ON pa.plano_id = p.id
         LEFT JOIN
             empresas e ON u.empresa_id = e.id
         ORDER BY

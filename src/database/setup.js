@@ -91,7 +91,9 @@ async function setupDatabase() {
     await pool.execute(`
             CREATE TABLE IF NOT EXISTS pagamentos_assinatura (
                 id VARCHAR(36) PRIMARY KEY,
-                assinatura_id VARCHAR(36) NOT NULL,
+                usuario_id VARCHAR(36) NOT NULL,
+                plano_id VARCHAR(36) NOT NULL,
+                assinatura_id VARCHAR(36) NULL,
                 valor DECIMAL(10, 2) NOT NULL,
                 metodo_pagamento VARCHAR(50) NOT NULL,
                 status_pagamento ENUM('pendente', 'aprovado', 'reprovado', 'expirado', 'cancelado') DEFAULT 'pendente',
@@ -103,7 +105,9 @@ async function setupDatabase() {
                 qr_code_text TEXT,
                 init_point VARCHAR(255),
                 atualizado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-                FOREIGN KEY (assinatura_id) REFERENCES assinaturas(id) ON DELETE CASCADE
+                FOREIGN KEY (usuario_id) REFERENCES usuarios(id) ON DELETE CASCADE,
+                FOREIGN KEY (plano_id) REFERENCES planos(id) ON DELETE RESTRICT,
+                FOREIGN KEY (assinatura_id) REFERENCES assinaturas(id) ON DELETE SET NULL
             )
         `);
 
