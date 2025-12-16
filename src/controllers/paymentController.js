@@ -5,6 +5,16 @@ import pool from "../db.js";
 
 dotenv.config();
 
+// Valida variáveis de ambiente críticas
+if (!process.env.MERCADO_PAGO_ACCESS_TOKEN) {
+  console.error('❌ MERCADO_PAGO_ACCESS_TOKEN não está definido nas variáveis de ambiente');
+  throw new Error('Configuração do Mercado Pago está incompleta');
+}
+
+if (!process.env.BACKEND_URL) {
+  console.warn('⚠️ BACKEND_URL não está definido nas variáveis de ambiente');
+}
+
 const client = new MercadoPagoConfig({
   accessToken: process.env.MERCADO_PAGO_ACCESS_TOKEN,
 });
@@ -406,6 +416,7 @@ class PaymentController {
     await connection.beginTransaction();
 
     try {
+      console.log('🛒 Iniciando pagamento para usuário:', usuarioId);
       
       const [cartItems] = await connection.execute(
         "SELECT plano_id, periodo, cupom_codigo, cupom_desconto FROM carrinho_usuarios WHERE usuario_id = ?",
@@ -413,33 +424,61 @@ class PaymentController {
       );
 
       if (cartItems.length === 0) {
+        console.log('⚠️ Carrinho vazio para usuário:', usuarioId);
         await connection.rollback();
         return res.status(404).json({ message: "Carrinho vazio" });
       }
 
       const { plano_id: planId, periodo, cupom_codigo, cupom_desconto } = cartItems[0];
+      console.log('📋 Dados do carrinho:', { planId, periodo, cupom_codigo, cupom_desconto });
+
+      // Valida período
+      if (!periodo || (periodo !== 'mensal' && periodo !== 'anual')) {
+        console.error('❌ Período inválido:', periodo);
+        await connection.rollback();
+        return res.status(400).json({ 
+          message: "Período inválido. Use 'mensal' ou 'anual'."
+        });
+      }
 
       const [planRows] = await connection.execute(
-        "SELECT * FROM planos WHERE id = ?",
-        [planId]
+        "SELECT * FROM planos WHERE id = ? AND periodo = ?",
+        [planId, periodo]
       );
 
       if (planRows.length === 0) {
+        console.error('❌ Plano não encontrado:', { planId, periodo });
         await connection.rollback();
-        return res.status(404).json({ message: "Plano não encontrado" });
+        return res.status(404).json({ 
+          message: "Plano não encontrado para o período selecionado" 
+        });
       }
 
       const plano = planRows[0];
+      console.log('✅ Plano encontrado:', plano.nome, '-', plano.periodo);
 
+      // Converte e valida o preço
+      let preco = parseFloat(plano.preco.toString().replace(",", "."));
       
-      let preco = Number(plano.preco.toString().replace(",", "."));
+      // Valida se o preço é um número válido
+      if (isNaN(preco) || preco <= 0) {
+        console.error('❌ Preço inválido:', { precoOriginal: plano.preco, precoConvertido: preco });
+        await connection.rollback();
+        return res.status(400).json({ 
+          message: "Preço do plano inválido. Entre em contato com o suporte." 
+        });
+      }
+      
       const precoOriginal = preco;
       let cupomId = null;
       let valorDesconto = cupom_desconto ? parseFloat(cupom_desconto) : 0;
       let cupomInfo = null;
+      
+      console.log('💰 Preço do plano:', preco);
 
       // Se houver cupom no carrinho, buscar detalhes e aplicar desconto
       if (cupom_codigo && valorDesconto > 0) {
+        console.log('🎫 Aplicando cupom:', cupom_codigo);
         const [cupons] = await connection.execute(
           'SELECT * FROM cupons WHERE codigo = ?',
           [cupom_codigo]
@@ -451,6 +490,7 @@ class PaymentController {
           
           // Aplicar desconto
           preco = Math.max(0, preco - valorDesconto);
+          console.log('💰 Desconto aplicado:', valorDesconto, '| Preço final:', preco);
           
           cupomInfo = {
             codigo: cupom.codigo,
@@ -458,19 +498,41 @@ class PaymentController {
             valor: cupom.valor,
             desconto: valorDesconto
           };
+        } else {
+          console.warn('⚠️ Cupom não encontrado:', cupom_codigo);
         }
       }
+
+      // Valida o preço final antes de enviar ao Mercado Pago
+      if (preco <= 0) {
+        console.error('❌ Preço final inválido (menor ou igual a zero):', preco);
+        await connection.rollback();
+        return res.status(400).json({ 
+          message: "O valor final do pagamento é inválido. Verifique o cupom aplicado." 
+        });
+      }
+
+      // Arredonda para 2 casas decimais para evitar problemas com o Mercado Pago
+      preco = Math.round(preco * 100) / 100;
 
       const paymentId = uuidv4();
       // Tempo de expiração configurável (padrão: 2 minutos)
       const PAYMENT_EXPIRATION_MINUTES = parseInt(process.env.PAYMENT_EXPIRATION_MINUTES || '2', 10);
       const expirationTime = new Date(Date.now() + PAYMENT_EXPIRATION_MINUTES * 60 * 1000);
 
+      console.log('💳 Criando pagamento no Mercado Pago:', {
+        paymentId,
+        valor: preco,
+        plano: plano.nome,
+        periodo,
+        email: req.user.email
+      });
+
       const paymentClient = new Payment(client);
 
       const paymentData = {
         body: {
-          transaction_amount: preco,
+          transaction_amount: Number(preco.toFixed(2)), // Garante formato decimal correto
           description: `Assinatura ${plano.nome} - ${periodo}`,
           payment_method_id: "pix",
           payer: {
@@ -481,7 +543,13 @@ class PaymentController {
         },
       };
 
+      console.log('📤 Dados do pagamento enviados ao MP:', {
+        transaction_amount: paymentData.body.transaction_amount,
+        tipo: typeof paymentData.body.transaction_amount
+      });
+
       const response = await paymentClient.create(paymentData);
+      console.log('✅ Pagamento criado no Mercado Pago:', response.id);
 
       const qrCodeBase64 =
         response.point_of_interaction?.transaction_data?.qr_code_base64 || "";
@@ -532,10 +600,30 @@ class PaymentController {
       });
     } catch (error) {
       await connection.rollback();
-      console.error("Erro ao iniciar pagamento:", error);
+      console.error("❌ Erro ao iniciar pagamento:", {
+        message: error.message,
+        stack: error.stack,
+        response: error.response?.data,
+        status: error.response?.status,
+        usuarioId: req.user?.id
+      });
+      
+      // Verifica erros específicos
+      if (error.message?.includes('Configuração do Mercado Pago')) {
+        return res.status(500).json({
+          message: "Erro de configuração do servidor. Entre em contato com o suporte.",
+        });
+      }
+      
+      if (error.response?.status === 401) {
+        return res.status(500).json({
+          message: "Erro de autenticação com o gateway de pagamento.",
+        });
+      }
+      
       return res.status(500).json({
-        message: "Erro ao iniciar pagamento",
-        error: error.message,
+        message: "Erro ao iniciar pagamento. Tente novamente.",
+        error: process.env.NODE_ENV === 'development' ? error.message : undefined,
       });
     } finally {
       connection.release();

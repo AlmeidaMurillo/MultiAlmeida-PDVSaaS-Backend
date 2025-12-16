@@ -69,6 +69,14 @@ class CarrinhoController {
           return res.status(400).json({ error: "Plano e período são obrigatórios" });
         }
 
+        // Valida período
+        if (periodo !== 'mensal' && periodo !== 'anual') {
+          await connection.rollback();
+          return res.status(400).json({ 
+            error: "Período inválido. Use 'mensal' ou 'anual'." 
+          });
+        }
+
         
         const [planos] = await connection.execute(
           "SELECT id FROM planos WHERE id = ? AND periodo = ?",
