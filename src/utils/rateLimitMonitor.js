@@ -37,3 +37,4 @@ export const createRateLimitHandler = (limiterName) => {
 export default {
   logRateLimitHit,
   createRateLimitHandler
+};
