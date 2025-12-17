@@ -4,8 +4,8 @@ import { validationResult } from 'express-validator';
 import pool from '../db.js';
 import { v4 as uuidv4 } from 'uuid';
 import crypto from 'crypto';
+import { logLogin, logLogout, logRegistro, logSessao } from '../utils/logger.js';
 
-// Imports condicionais de segurança com fallbacks
 let sanitizeEmail = (email) => email?.toLowerCase().trim();
 let sanitizeName = (name) => name?.trim();
 let logLoginAttempt = () => {};
@@ -68,7 +68,6 @@ const setRefreshTokenCookie = (req, res, token) => {
   const isLocalhost = origin.includes('localhost') || origin.includes('127.0.0.1');
   const isProduction = NODE_ENV === 'production';
   
-  // Detecta se a request é cross-site (origem diferente do host do backend)
   let isCrossSite = false;
   try {
     const originHost = origin ? new URL(origin).host : '';
@@ -78,17 +77,13 @@ const setRefreshTokenCookie = (req, res, token) => {
 
   const options = {
     httpOnly: true,
-    secure: isProduction, // true apenas em produção
-    // Em requests cross-site (ex: frontend localhost -> backend Railway), usar None
-    // Em same-site (ex: tudo em localhost), manter Lax para maior segurança
+    secure: isProduction,
     sameSite: isCrossSite ? 'none' : 'lax',
     path: '/', 
     maxAge: REFRESH_TOKEN_EXPIRES_IN_DAYS * 24 * 60 * 60 * 1000,
   };
   
-  // Em desenvolvimento local, não define domínio para permitir localhost
   if (!isLocalhost && !isProduction) {
-    // Força sameSite none para ambientes de staging
     options.sameSite = 'none';
     options.secure = true;
   }
@@ -103,11 +98,9 @@ const setRefreshTokenCookie = (req, res, token) => {
   
   res.cookie('refreshToken', token, options);
   
-  // Log adicional para debug
   console.log('🍪 Cookie set-cookie header:', res.getHeader('set-cookie'));
 };
 
-// Limpa o cookie usando EXATAMENTE as mesmas configurações da criação
 const clearRefreshTokenCookie = (req, res) => {
   const origin = req.headers.origin || '';
   const isLocalhost = origin.includes('localhost') || origin.includes('127.0.0.1');
@@ -116,7 +109,6 @@ const clearRefreshTokenCookie = (req, res) => {
   const options = {
     httpOnly: true,
     secure: isProduction,
-    // Deve espelhar exatamente a política usada ao setar o cookie
     sameSite: isCrossSite ? 'none' : 'lax',
     path: '/',
   };
@@ -128,18 +120,10 @@ const clearRefreshTokenCookie = (req, res) => {
   
   console.log('🧹 Limpando cookie refreshToken:', { origem: origin, options });
   
-  // Limpa o cookie definindo maxAge como 0
   res.clearCookie('refreshToken', options);
   
-  // Garante que o cookie seja sobrescrito com valor vazio
   res.cookie('refreshToken', '', { ...options, maxAge: 0 });
 };
-
-// Access token NÃO é armazenado em cookie - fica no localStorage do frontend
-// Apenas refresh token vai em cookie httpOnly
-
-
-
 
 const findSessionByToken = async (refreshToken) => {
   const [sessions] = await pool.execute(
@@ -164,7 +148,6 @@ class AuthController {
 
     let { email, senha } = req.body;
     
-    // Sanitiza entrada
     email = sanitizeEmail(email);
     
     if (!email) {
@@ -177,7 +160,6 @@ class AuthController {
         [email]
       );
       
-      // Proteção contra timing attacks - sempre faz hash mesmo se usuário não existir
       const dummyHash = '$2a$10$abcdefghijklmnopqrstuv.wxyzABCDEFGHIJKLMNOPQRSTUVWXYZ012';
       const hashToCompare = userRows.length > 0 ? userRows[0].senha : dummyHash;
       const senhaCorreta = await bcrypt.compare(senha, hashToCompare);
@@ -185,7 +167,9 @@ class AuthController {
       if (userRows.length === 0 || !senhaCorreta) {
         logLoginAttempt(false, email, req.ip, req.headers['user-agent']);
         
-        // Delay para dificultar brute force
+        // Registrar tentativa de login falhada
+        await logLogin(req, { email }, false);
+        
         await new Promise(resolve => setTimeout(resolve, 1000));
         
         return res.status(401).json({ error: 'Email ou senha incorretos' });
@@ -193,7 +177,6 @@ class AuthController {
 
       const usuario = userRows[0];
       
-      // Log de login bem-sucedido
       logLoginAttempt(true, email, req.ip, req.headers['user-agent'], usuario.id);
 
       const accessToken = await generateAccessToken(usuario);
@@ -234,6 +217,9 @@ class AuthController {
         ip: req.ip
       });
 
+      // Registrar log de login
+      await logLogin(req, usuario, true);
+
       return res.json({
         accessToken,
         user: { id: usuario.id, nome: usuario.nome, email: usuario.email, papel: usuario.papel },
@@ -259,8 +245,6 @@ class AuthController {
         return res.status(403).json({ error: 'Refresh token inválido ou expirado.' });
       }
 
-      // SEGURANÇA: Não renova a data de expiração - expira_em permanece a data original
-      // Apenas atualiza o último acesso para tracking
       await pool.execute(
         'UPDATE sessoes_usuarios SET ultimo_acesso = NOW() WHERE id = ?',
         [validSession.id]
@@ -273,7 +257,6 @@ class AuthController {
       }
       const accessToken = await generateAccessToken(userRows[0]);
       
-      // Não gera novo refresh token - mantém o mesmo
       return res.json({ accessToken });
 
     } catch (error) {
@@ -287,15 +270,21 @@ class AuthController {
 
     try {
       let userId = null;
+      let userEmail = null;
       
-      // Se houver refresh token, desativa a sessão no banco
       if (refreshToken) {
         const validSession = await findSessionByToken(refreshToken);
         if (validSession) {
           userId = validSession.usuario_id;
+          
+          // Buscar email do usuário
+          const [userRows] = await pool.execute('SELECT email FROM usuarios WHERE id = ?', [userId]);
+          if (userRows.length > 0) {
+            userEmail = userRows[0].email;
+          }
+          
           await pool.execute('UPDATE sessoes_usuarios SET esta_ativo = FALSE WHERE id = ?', [validSession.id]);
           
-          // Log de logout
           logSecurityEvent(
             SecurityLevel.INFO,
             SecurityEvent.LOGOUT,
@@ -304,19 +293,19 @@ class AuthController {
               ip: req.ip
             }
           );
+          
+          // Registrar log de logout
+          await logLogout(req, { id: userId, email: userEmail });
         }
       }
 
-      // SEMPRE limpa o cookie, mesmo se não houver token
       clearRefreshTokenCookie(req, res);
       
-      // Retorna sucesso
       res.status(200).json({ message: 'Logout realizado com sucesso' });
 
     } catch (error) {
       console.error('Erro no logout:', error);
       
-      // Mesmo com erro, limpa o cookie
       clearRefreshTokenCookie(req, res);
       
       res.status(500).json({ error: 'Erro ao realizar logout' });
@@ -349,12 +338,10 @@ class AuthController {
         sessionId: validSession?.id
       });
       
-      // Verifica se a sessão foi encontrada e se está ativa
       if (!validSession) {
         return res.json({ hasRefresh: false, sessionActive: false });
       }
       
-      // Verifica se está ativa no banco (pode ter sido desativada por login em outro lugar)
       const [sessionRows] = await pool.execute(
         'SELECT esta_ativo FROM sessoes_usuarios WHERE id = ?',
         [validSession.id]
@@ -448,7 +435,6 @@ class AuthController {
           .json({ error: "Nome, email e senha são obrigatórios" });
       }
       
-      // Sanitiza entradas
       nome = sanitizeName(nome);
       email = sanitizeEmail(email);
       
@@ -472,7 +458,6 @@ class AuthController {
           }
         );
         
-        // Delay para dificultar enumeração de emails
         await new Promise(resolve => setTimeout(resolve, 500));
         
         return res.status(409).json({ error: "Email já cadastrado" });
@@ -515,7 +500,6 @@ class AuthController {
 
       setRefreshTokenCookie(req, res, refreshToken);
       
-      // Log de criação de conta
       logSecurityEvent(
         SecurityLevel.INFO,
         SecurityEvent.LOGIN_SUCCESS,
@@ -526,6 +510,9 @@ class AuthController {
           ip: req.ip
         }
       );
+      
+      // Registrar log de registro
+      await logRegistro(req, usuario);
       
       return res.status(201).json({
         message: "Conta criada com sucesso",

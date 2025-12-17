@@ -82,6 +82,14 @@ class UserController {
 
       const { nome, email } = req.body;
 
+      if (!nome || typeof nome !== 'string' || nome.trim().length < 2) {
+        return res.status(400).json({ message: "Nome inválido. Mínimo 2 caracteres." });
+      }
+
+      if (!email || typeof email !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        return res.status(400).json({ message: "Email inválido." });
+      }
+
       const [userRows] = await pool.execute("SELECT * FROM usuarios WHERE id = ?", [userId]);
       if (userRows.length === 0) {
         return res.status(404).json({ message: "Usuário não encontrado." });
@@ -89,9 +97,8 @@ class UserController {
 
       await pool.execute(
         "UPDATE usuarios SET nome = ?, email = ? WHERE id = ?",
-        [nome, email, userId]
+        [nome.trim(), email.toLowerCase().trim(), userId]
       );
-
 
       res.status(200).json({ message: "Dados atualizados com sucesso." });
     } catch (error) {

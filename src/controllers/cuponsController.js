@@ -2,7 +2,6 @@ import pool from '../db.js';
 import { v4 as uuidv4 } from 'uuid';
 
 class CuponsController {
-  // Listar todos os cupons (admin)
   async listar(req, res) {
     try {
       const [cupons] = await pool.execute(
@@ -16,7 +15,6 @@ class CuponsController {
     }
   }
 
-  // Criar novo cupom (admin)
   async criar(req, res) {
     try {
       const {
@@ -29,7 +27,6 @@ class CuponsController {
         ativo = true
       } = req.body;
 
-      // Validações
       if (!codigo || !tipo || !valor || !data_inicio || !data_fim) {
         return res.status(400).json({ error: 'Campos obrigatórios faltando' });
       }
@@ -46,7 +43,6 @@ class CuponsController {
         return res.status(400).json({ error: 'Percentual não pode ser maior que 100%' });
       }
 
-      // Verificar se o código já existe
       const [existente] = await pool.execute(
         'SELECT id FROM cupons WHERE codigo = ?',
         [codigo.toUpperCase()]
@@ -56,7 +52,6 @@ class CuponsController {
         return res.status(400).json({ error: 'Código de cupom já existe' });
       }
 
-      // Criar cupom
       const id = uuidv4();
       await pool.execute(
         `INSERT INTO cupons (id, codigo, tipo, valor, quantidade_maxima, data_inicio, data_fim, ativo) 
@@ -85,7 +80,6 @@ class CuponsController {
     }
   }
 
-  // Atualizar cupom (admin)
   async atualizar(req, res) {
     try {
       const { id } = req.params;
@@ -99,7 +93,6 @@ class CuponsController {
         ativo
       } = req.body;
 
-      // Verificar se cupom existe
       const [cupom] = await pool.execute(
         'SELECT * FROM cupons WHERE id = ?',
         [id]
@@ -109,7 +102,6 @@ class CuponsController {
         return res.status(404).json({ error: 'Cupom não encontrado' });
       }
 
-      // Validações
       if (tipo && tipo !== 'percentual' && tipo !== 'fixo') {
         return res.status(400).json({ error: 'Tipo inválido. Use "percentual" ou "fixo"' });
       }
@@ -122,7 +114,6 @@ class CuponsController {
         return res.status(400).json({ error: 'Percentual não pode ser maior que 100%' });
       }
 
-      // Se está alterando o código, verificar duplicidade
       if (codigo && codigo.toUpperCase() !== cupom[0].codigo) {
         const [existente] = await pool.execute(
           'SELECT id FROM cupons WHERE codigo = ? AND id != ?',
@@ -134,7 +125,6 @@ class CuponsController {
         }
       }
 
-      // Construir query de atualização
       const campos = [];
       const valores = [];
 
@@ -190,7 +180,6 @@ class CuponsController {
     }
   }
 
-  // Deletar cupom (admin)
   async deletar(req, res) {
     try {
       const { id } = req.params;
@@ -213,7 +202,6 @@ class CuponsController {
     }
   }
 
-  // Validar e aplicar cupom (usuário)
   async validar(req, res) {
     try {
       const { codigo, valor_pedido } = req.body;
@@ -222,7 +210,6 @@ class CuponsController {
         return res.status(400).json({ error: 'Código do cupom e valor do pedido são obrigatórios' });
       }
 
-      // Buscar cupom
       const [cupons] = await pool.execute(
         'SELECT * FROM cupons WHERE codigo = ?',
         [codigo.toUpperCase()]
@@ -252,12 +239,10 @@ class CuponsController {
         return res.status(400).json({ error: 'Cupom expirado' });
       }
 
-      // Verificar quantidade máxima de usos
       if (cupom.quantidade_maxima !== null && cupom.quantidade_usada >= cupom.quantidade_maxima) {
         return res.status(400).json({ error: 'Cupom esgotado' });
       }
 
-      // Calcular desconto
       let desconto = 0;
       if (cupom.tipo === 'percentual') {
         desconto = (parseFloat(valor_pedido) * parseFloat(cupom.valor)) / 100;
@@ -265,7 +250,6 @@ class CuponsController {
         desconto = parseFloat(cupom.valor);
       }
 
-      // Garantir que o desconto não seja maior que o valor do pedido
       desconto = Math.min(desconto, parseFloat(valor_pedido));
 
       const valorFinal = parseFloat(valor_pedido) - desconto;
@@ -288,7 +272,6 @@ class CuponsController {
     }
   }
 
-  // Incrementar uso do cupom (chamado após pagamento aprovado)
   async incrementarUso(cupomId) {
     try {
       await pool.execute(

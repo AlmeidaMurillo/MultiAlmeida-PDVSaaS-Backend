@@ -2,10 +2,10 @@ import { MercadoPagoConfig, Payment } from "mercadopago";
 import dotenv from "dotenv";
 import { v4 as uuidv4 } from "uuid";
 import pool from "../db.js";
+import { logPagamento, logCompra } from "../utils/logger.js";
 
 dotenv.config();
 
-// Valida variáveis de ambiente críticas
 if (!process.env.MERCADO_PAGO_ACCESS_TOKEN) {
   console.error('❌ MERCADO_PAGO_ACCESS_TOKEN não está definido nas variáveis de ambiente');
   throw new Error('Configuração do Mercado Pago está incompleta');
@@ -64,12 +64,9 @@ class PaymentController {
 
   
   async handleWebhook(req, res) {
-    // 🔒 VALIDAÇÃO DE WEBHOOK DO MERCADO PAGO
-    // Verifica assinatura x-signature ou x-request-id para garantir autenticidade
     const xSignature = req.headers['x-signature'];
     const xRequestId = req.headers['x-request-id'];
     
-    // Mercado Pago envia x-signature ou x-request-id em webhooks autênticos
     if (!xSignature && !xRequestId) {
       console.warn('⚠️ Webhook recebido sem assinatura do Mercado Pago', {
         ip: req.ip,
@@ -119,7 +116,6 @@ class PaymentController {
           ? "cancelado"
           : "pendente";
 
-      // Define data_pagamento APENAS quando o pagamento for aprovado
       const updateQuery = novoStatusPagamento === "aprovado"
         ? "UPDATE pagamentos_assinatura SET status_pagamento = ?, data_pagamento = NOW(), transaction_id = ? WHERE id = ?"
         : "UPDATE pagamentos_assinatura SET status_pagamento = ?, transaction_id = ? WHERE id = ?";
@@ -135,7 +131,6 @@ class PaymentController {
         return res.status(404).send("Registro interno não encontrado.");
       }
 
-      // Busca informações do pagamento
       const [pagamentoRows] = await connection.execute(
         "SELECT usuario_id, plano_id, cupom_id FROM pagamentos_assinatura WHERE id = ?",
         [nossoPagamentoId]
@@ -149,7 +144,6 @@ class PaymentController {
       const { usuario_id, plano_id, cupom_id } = pagamentoRows[0];
 
       if (novoStatusPagamento === "aprovado") {
-        // Busca informações do plano
         const [planoRows] = await connection.execute(
           "SELECT duracao_dias FROM planos WHERE id = ?",
           [plano_id]
@@ -162,7 +156,6 @@ class PaymentController {
 
         const { duracao_dias } = planoRows[0];
 
-        // CRIA a assinatura apenas quando aprovado
         const assinaturaId = uuidv4();
         await connection.execute(
           `INSERT INTO assinaturas (id, usuario_id, plano_id, status, data_assinatura, data_vencimento) 
@@ -170,13 +163,11 @@ class PaymentController {
           [assinaturaId, usuario_id, plano_id, duracao_dias]
         );
 
-        // Vincula a assinatura ao pagamento
         await connection.execute(
           "UPDATE pagamentos_assinatura SET assinatura_id = ? WHERE id = ?",
           [assinaturaId, nossoPagamentoId]
         );
 
-        // Incrementa o uso do cupom se houver
         if (cupom_id) {
           await connection.execute(
             "UPDATE cupons SET quantidade_usada = quantidade_usada + 1 WHERE id = ?",
@@ -184,15 +175,12 @@ class PaymentController {
           );
         }
 
-        // Limpa o carrinho do usuário
         await connection.execute("DELETE FROM carrinho_usuarios WHERE usuario_id = ?", [usuario_id]);
 
       } else if (
         novoStatusPagamento === "reprovado" ||
         novoStatusPagamento === "cancelado"
       ) {
-        // Para pagamentos reprovados/cancelados, não faz nada
-        // A assinatura nunca foi criada
       }
 
       await connection.commit();
@@ -222,7 +210,6 @@ class PaymentController {
       if (Array.isArray(pagamento) && pagamento.length > 0) {
         const payment = pagamento[0];
         
-        // Verifica se o pagamento expirou
         const now = new Date();
         const expiration = new Date(payment.data_expiracao);
         
@@ -234,13 +221,11 @@ class PaymentController {
           await connection.beginTransaction();
           
           try {
-            // Atualiza o status do pagamento para expirado
             await connection.execute(
               "UPDATE pagamentos_assinatura SET status_pagamento = 'expirado' WHERE id = ?",
               [id]
             );
             
-            // Se houver assinatura criada (não deveria ter para pagamentos pendentes), atualiza
             if (payment.assinatura_id) {
               await connection.execute(
                 "UPDATE assinaturas SET status = 'inativa' WHERE id = ?",
@@ -309,7 +294,6 @@ class PaymentController {
 
       const data = pagamento[0];
 
-      // Verifica e atualiza status se expirou
       const now = new Date();
       const expiration = new Date(data.expirationTime);
       
@@ -322,13 +306,11 @@ class PaymentController {
         await expConnection.beginTransaction();
         
         try {
-          // Atualiza o status do pagamento
           await expConnection.execute(
             "UPDATE pagamentos_assinatura SET status_pagamento = ? WHERE id = ?",
             ["expirado", id]
           );
           
-          // Se houver assinatura vinculada, atualiza (não deveria ter para pendente)
           const [assinatura] = await expConnection.execute(
             "SELECT assinatura_id FROM pagamentos_assinatura WHERE id = ?",
             [id]
@@ -432,7 +414,6 @@ class PaymentController {
       const { plano_id: planId, periodo, cupom_codigo, cupom_desconto } = cartItems[0];
       console.log('📋 Dados do carrinho:', { planId, periodo, cupom_codigo, cupom_desconto });
 
-      // Valida período
       if (!periodo || (periodo !== 'mensal' && periodo !== 'anual')) {
         console.error('❌ Período inválido:', periodo);
         await connection.rollback();
@@ -457,10 +438,8 @@ class PaymentController {
       const plano = planRows[0];
       console.log('✅ Plano encontrado:', plano.nome, '-', plano.periodo);
 
-      // Converte e valida o preço
       let preco = parseFloat(plano.preco.toString().replace(",", "."));
       
-      // Valida se o preço é um número válido
       if (isNaN(preco) || preco <= 0) {
         console.error('❌ Preço inválido:', { precoOriginal: plano.preco, precoConvertido: preco });
         await connection.rollback();
@@ -476,7 +455,6 @@ class PaymentController {
       
       console.log('💰 Preço do plano:', preco);
 
-      // Se houver cupom no carrinho, buscar detalhes e aplicar desconto
       if (cupom_codigo && valorDesconto > 0) {
         console.log('🎫 Aplicando cupom:', cupom_codigo);
         const [cupons] = await connection.execute(
@@ -488,7 +466,6 @@ class PaymentController {
           const cupom = cupons[0];
           cupomId = cupom.id;
           
-          // Aplicar desconto
           preco = Math.max(0, preco - valorDesconto);
           console.log('💰 Desconto aplicado:', valorDesconto, '| Preço final:', preco);
           
@@ -503,7 +480,6 @@ class PaymentController {
         }
       }
 
-      // Valida o preço final antes de enviar ao Mercado Pago
       if (preco <= 0) {
         console.error('❌ Preço final inválido (menor ou igual a zero):', preco);
         await connection.rollback();
@@ -512,11 +488,9 @@ class PaymentController {
         });
       }
 
-      // Arredonda para 2 casas decimais para evitar problemas com o Mercado Pago
       preco = Math.round(preco * 100) / 100;
 
       const paymentId = uuidv4();
-      // Tempo de expiração configurável (padrão: 2 minutos)
       const PAYMENT_EXPIRATION_MINUTES = parseInt(process.env.PAYMENT_EXPIRATION_MINUTES || '2', 10);
       const expirationTime = new Date(Date.now() + PAYMENT_EXPIRATION_MINUTES * 60 * 1000);
 
@@ -532,7 +506,7 @@ class PaymentController {
 
       const paymentData = {
         body: {
-          transaction_amount: Number(preco.toFixed(2)), // Garante formato decimal correto
+          transaction_amount: Number(preco.toFixed(2)),
           description: `Assinatura ${plano.nome} - ${periodo}`,
           payment_method_id: "pix",
           payer: {
@@ -556,7 +530,6 @@ class PaymentController {
       const qrCodeText =
         response.point_of_interaction?.transaction_data?.qr_code || "";
 
-      // Agora salva apenas o pagamento (sem assinatura), incluindo cupom se aplicável
       await connection.execute(
         `INSERT INTO pagamentos_assinatura (
           id, usuario_id, plano_id, valor, metodo_pagamento, status_pagamento,
@@ -578,6 +551,17 @@ class PaymentController {
       );
 
       await connection.commit();
+
+      // Registrar log de pagamento criado
+      await logPagamento(req, req.user, 'Pagamento PIX criado', {
+        paymentId,
+        plano: plano.nome,
+        periodo,
+        valor: preco,
+        valorOriginal: precoOriginal,
+        desconto: valorDesconto,
+        cupom: cupomInfo,
+      });
 
       return res.status(200).json({
         paymentId,

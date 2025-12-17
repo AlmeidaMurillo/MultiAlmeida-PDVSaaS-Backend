@@ -162,6 +162,26 @@ async function setupDatabase() {
             )
         `);
 
+    // Tabela de logs do sistema
+    await pool.execute(`
+            CREATE TABLE IF NOT EXISTS logs_sistema (
+                id VARCHAR(36) PRIMARY KEY,
+                tipo ENUM('rate_limit', 'login', 'logout', 'registro', 'pagamento', 'compra', 'erro', 'admin', 'sessao', 'acesso') NOT NULL,
+                usuario_id VARCHAR(36) NULL,
+                email VARCHAR(255) NULL,
+                ip VARCHAR(45) NULL,
+                acao VARCHAR(200) NOT NULL,
+                detalhes JSON NULL,
+                criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_tipo (tipo),
+                INDEX idx_usuario (usuario_id),
+                INDEX idx_criado (criado_em),
+                INDEX idx_tipo_data (tipo, criado_em),
+                INDEX idx_email (email),
+                INDEX idx_ip (ip)
+            )
+        `);
+
     
     const [users] = await pool.execute(
       "SELECT * FROM usuarios WHERE email = 'admin@multialmeida.com'"

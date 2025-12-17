@@ -9,7 +9,6 @@ if (!ACCESS_TOKEN_SECRET) {
 export async function authMiddleware(req, res, next) {
   let token = null;
   
-  // Prioriza Authorization header (mais seguro)
   const authHeader = req.headers.authorization;
   if (authHeader && authHeader.startsWith('Bearer ')) {
     token = authHeader.substring(7);
@@ -21,23 +20,20 @@ export async function authMiddleware(req, res, next) {
     return res.status(401).json({ error: "Token de acesso não fornecido." });
   }
 
-  // Validação básica do formato do token
   if (token.split('.').length !== 3) {
     return res.status(401).json({ error: "Token malformado." });
   }
 
   try {
     const decoded = jwt.verify(token, ACCESS_TOKEN_SECRET, {
-      algorithms: ['HS256'], // Força apenas algoritmo esperado
+      algorithms: ['HS256'],
       complete: false
     });
 
-    // Validações adicionais do payload
     if (!decoded.id || !decoded.email || !decoded.papel) {
       return res.status(401).json({ error: 'Token inválido: payload incompleto.' });
     }
 
-    // Verifica sessão ativa no banco
     const [sessionRows] = await pool.execute(
       'SELECT usuario_id, papel FROM sessoes_usuarios WHERE usuario_id = ? AND esta_ativo = TRUE AND expira_em > NOW()',
       [decoded.id]
@@ -50,7 +46,6 @@ export async function authMiddleware(req, res, next) {
       return res.status(401).json({ error: 'Sessão inválida ou expirada.' });
     }
 
-    // Valida que o papel no token corresponde ao papel na sessão
     if (sessionRows[0].papel !== decoded.papel) {
       console.warn(`⚠️ Papel inconsistente para usuário ${decoded.id}`);
       return res.status(401).json({ error: 'Sessão inválida.' });
@@ -63,7 +58,6 @@ export async function authMiddleware(req, res, next) {
       res.clearCookie('accessToken');
     }
     
-    // Log de segurança
     console.warn(`⚠️ Falha de autenticação: ${err.message} | IP: ${req.ip}`);
     
     if (err instanceof jwt.TokenExpiredError) {
@@ -76,19 +70,16 @@ export async function authMiddleware(req, res, next) {
   }
 }
 
-// Middleware que exige ser admin
 export function requireAdmin(req, res, next) {
   if (!req.user) {
     return res.status(401).json({ error: "Usuário não autenticado" });
   }
-  // req.user.papel agora é uma string
   if (req.user.papel !== "admin") {
     return res.status(403).json({ error: "Acesso negado" });
   }
   return next();
 }
 
-// Middleware que exige assinatura ativa ou vencida para não-admins
 export async function requireSubscription(req, res, next) {
   if (!req.user) {
     return res.status(401).json({ error: "Usuário não autenticado" });

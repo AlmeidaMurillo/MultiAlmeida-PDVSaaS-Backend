@@ -2,7 +2,6 @@ import pool from "../db.js";
 import { v4 as uuidv4 } from "uuid";
 
 class CarrinhoController {
-  
   async listar(req, res) {
     try {
       const usuarioId = req.user.id;
@@ -18,7 +17,7 @@ class CarrinhoController {
         ORDER BY c.criado_em DESC
       `, [usuarioId]);
 
-      // Formata os itens com os dados do plano parseados
+
       const itensFormatados = itens.map(item => ({
         id: item.id,
         usuario_id: item.usuario_id,
@@ -46,7 +45,6 @@ class CarrinhoController {
     }
   }
 
-  
   async adicionar(req, res) {
     const maxRetries = 3;
     let retries = 0;
@@ -69,7 +67,6 @@ class CarrinhoController {
           return res.status(400).json({ error: "Plano e período são obrigatórios" });
         }
 
-        // Valida período
         if (periodo !== 'mensal' && periodo !== 'anual') {
           await connection.rollback();
           return res.status(400).json({ 
@@ -88,19 +85,16 @@ class CarrinhoController {
           return res.status(404).json({ error: "Plano não encontrado" });
         }
 
-        // Verificar se o item já existe no carrinho
         const [existingItems] = await connection.execute(
           "SELECT id FROM carrinho_usuarios WHERE usuario_id = ? AND plano_id = ? AND periodo = ?",
           [usuarioId, planoId, periodo]
         );
 
         if (existingItems.length > 0) {
-          // Item já existe no carrinho, não fazer nada para preservar o cupom
           await connection.commit();
           return res.json({ message: "Item já está no carrinho" });
         }
 
-        // Se não existe, limpar o carrinho e adicionar o novo item
         await connection.execute("DELETE FROM carrinho_usuarios WHERE usuario_id = ?", [usuarioId]);
 
         
@@ -193,7 +187,6 @@ class CarrinhoController {
     }
   }
 
-  // Aplicar cupom ao carrinho
   async aplicarCupom(req, res) {
     try {
       const usuarioId = req.user.id;
@@ -203,7 +196,7 @@ class CarrinhoController {
         return res.status(400).json({ error: "Código do cupom é obrigatório" });
       }
 
-      // Buscar carrinho do usuário
+
       const [cartItems] = await pool.execute(
         `SELECT c.id, c.plano_id, c.quantidade, c.cupom_codigo, p.preco 
          FROM carrinho_usuarios c
@@ -212,7 +205,6 @@ class CarrinhoController {
         [usuarioId]
       );
 
-      // Verificar se já existe um cupom aplicado
       if (cartItems.length > 0 && cartItems[0].cupom_codigo) {
         return res.status(400).json({ 
           error: "Já existe um cupom aplicado. Remova-o primeiro para aplicar outro cupom." 
@@ -223,12 +215,10 @@ class CarrinhoController {
         return res.status(404).json({ error: "Carrinho vazio" });
       }
 
-      // Calcular valor total
       const valorTotal = cartItems.reduce((total, item) => {
         return total + (parseFloat(item.preco) * item.quantidade);
       }, 0);
 
-      // Validar cupom
       const [cupons] = await pool.execute(
         'SELECT * FROM cupons WHERE codigo = ?',
         [codigo.toUpperCase()]
@@ -243,12 +233,10 @@ class CarrinhoController {
       const dataInicio = new Date(cupom.data_inicio);
       const dataFim = new Date(cupom.data_fim);
 
-      // Verificar se está ativo
       if (!cupom.ativo) {
         return res.status(400).json({ error: 'Cupom inativo' });
       }
 
-      // Verificar datas
       if (agora < dataInicio) {
         return res.status(400).json({ error: 'Cupom ainda não está disponível' });
       }
@@ -257,12 +245,10 @@ class CarrinhoController {
         return res.status(400).json({ error: 'Cupom expirado' });
       }
 
-      // Verificar quantidade máxima de usos
       if (cupom.quantidade_maxima !== null && cupom.quantidade_usada >= cupom.quantidade_maxima) {
         return res.status(400).json({ error: 'Cupom esgotado' });
       }
 
-      // Calcular desconto
       let desconto = 0;
       if (cupom.tipo === 'percentual') {
         desconto = (valorTotal * parseFloat(cupom.valor)) / 100;
@@ -272,7 +258,6 @@ class CarrinhoController {
 
       desconto = Math.min(desconto, valorTotal);
 
-      // Atualizar todos os itens do carrinho com o cupom
       for (const item of cartItems) {
         await pool.execute(
           'UPDATE carrinho_usuarios SET cupom_codigo = ?, cupom_desconto = ? WHERE id = ?',
@@ -297,7 +282,6 @@ class CarrinhoController {
     }
   }
 
-  // Remover cupom do carrinho
   async removerCupom(req, res) {
     try {
       const usuarioId = req.user.id;

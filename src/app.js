@@ -9,7 +9,6 @@ import cookieParser from 'cookie-parser';
 import routes from './routes.js';
 import { generalLimiter } from './middlewares/rateLimit.js';
 
-// Imports condicionais de segurança
 let sanitizeMiddleware = (req, res, next) => next();
 let securityLoggerMiddleware = (req, res, next) => next();
 let attackDetectionMiddleware = (req, res, next) => next();
@@ -31,10 +30,8 @@ try {
 
 const app = express();
 
-// Configurar trust proxy ANTES de qualquer middleware
 app.set('trust proxy', 1);
 
-// Helmet com configurações de segurança melhoradas
 app.use(helmet({
   crossOriginResourcePolicy: { policy: 'same-site' },
   contentSecurityPolicy: {
@@ -45,7 +42,7 @@ app.use(helmet({
       imgSrc: ["'self'", 'data:', 'https:'],
       fontSrc: ["'self'", 'data:', 'https://fonts.gstatic.com'],
       objectSrc: ["'none'"],
-      frameAncestors: ["'none'"], // Proteção contra clickjacking (equivalente ao frame-ancestors)
+      frameAncestors: ["'none'"], 
       upgradeInsecureRequests: [],
     },
   },
@@ -54,10 +51,10 @@ app.use(helmet({
     includeSubDomains: true,
     preload: true
   },
-  frameguard: { action: 'deny' }, // X-Frame-Options: DENY
-  noSniff: true, // Previne MIME sniffing
-  xssFilter: true, // Ativa proteção XSS do navegador
-  hidePoweredBy: true, // Remove header X-Powered-By
+  frameguard: { action: 'deny' },
+  noSniff: true,
+  xssFilter: true,
+  hidePoweredBy: true, 
 }));
 
 const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
@@ -71,7 +68,6 @@ if (!allowedOrigins.includes('https://localhost:5173')) {
   allowedOrigins.push('https://localhost:5173');
 }
 
-// Suporte a 127.0.0.1 em desenvolvimento
 if (!allowedOrigins.includes('http://127.0.0.1:5173')) {
   allowedOrigins.push('http://127.0.0.1:5173');
 }
@@ -82,7 +78,6 @@ if (!allowedOrigins.includes('https://127.0.0.1:5173')) {
 app.use(
   cors({
     origin: (origin, callback) => {
-      // Permitir requisições sem origin (ex: Postman, mobile apps)
       if (!origin) return callback(null, true);
       
       if (allowedOrigins.includes(origin)) {
@@ -95,14 +90,13 @@ app.use(
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
     exposedHeaders: ['Set-Cookie'],
-    maxAge: 600, // 10 minutos de cache para preflight
+    maxAge: 600, 
   })
 );
 
-// Limita tamanho de payload JSON para prevenir ataques
 app.use(express.json({ 
   limit: '10kb',
-  strict: true, // Aceita apenas arrays e objetos
+  strict: true,
 }));
 
 app.use(express.urlencoded({ 
@@ -112,12 +106,9 @@ app.use(express.urlencoded({
 
 app.use(cookieParser());
 
-// Middleware de sanitização básica de headers
 app.use((req, res, next) => {
-  // Remove headers potencialmente perigosos
   delete req.headers['x-forwarded-host'];
   
-  // Valida Content-Type para requests com body
   if (['POST', 'PUT', 'PATCH'].includes(req.method)) {
     const contentType = req.headers['content-type'];
     if (contentType && !contentType.includes('application/json') && !contentType.includes('application/x-www-form-urlencoded')) {
@@ -128,22 +119,17 @@ app.use((req, res, next) => {
   next();
 });
 
-// Rate limiter geral aplicado a todas as rotas (EXCETO admin que tem seu próprio)
 app.use((req, res, next) => {
-  // Pula rate limit geral para rotas admin (elas têm adminLimiter específico)
   if (req.path.startsWith('/api/admin')) {
     return next();
   }
   generalLimiter(req, res, next);
 });
 
-// Middleware de logging de segurança (se disponível)
 app.use(securityLoggerMiddleware);
 
-// Middleware de detecção de ataques (se disponível)
 app.use(attackDetectionMiddleware);
 
-// Middleware de sanitização (se disponível)
 app.use(sanitizeMiddleware);
 
 const cache = apicache.middleware;

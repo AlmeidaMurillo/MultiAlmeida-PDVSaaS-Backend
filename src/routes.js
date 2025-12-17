@@ -2,17 +2,20 @@ import { Router } from 'express';
 import { body } from 'express-validator';
 import AuthController from './controllers/authController.js';
 import UserController from './controllers/userController.js';
-// ContasController compactado dentro de UserController
 import PaymentController from './controllers/paymentController.js';
 import PlanosController from './controllers/planosController.js';
 import CarrinhoController from './controllers/carrinhoController.js';
 import CuponsController from './controllers/cuponsController.js';
+import { 
+  getLogs,
+  getLogsStats,
+  deleteLogs
+} from './controllers/monitoringController.js';
 import { authMiddleware, requireAdmin } from './middlewares/auth.js';
 import { authLimiter, refreshLimiter, paymentLimiter, publicApiLimiter, sessionCheckLimiter, paymentStatusLimiter, adminLimiter } from './middlewares/rateLimit.js';
 
 const routes = Router();
 
-// Rota de health check (pública)
 routes.get('/api/health', (req, res) => {
   res.status(200).json({ 
     status: 'OK', 
@@ -22,7 +25,6 @@ routes.get('/api/health', (req, res) => {
 });
 
 const authRoutes = Router();
-// Rotas de autenticação
 authRoutes.post('/login', authLimiter, [
   body('email').isEmail().normalizeEmail().withMessage('Email inválido'),
   body('senha').notEmpty().withMessage('A senha é obrigatória'),
@@ -33,7 +35,6 @@ authRoutes.get('/status', authMiddleware, AuthController.checkAuthStatus);
 authRoutes.get('/has-refresh', sessionCheckLimiter, AuthController.hasRefresh);
 routes.use('/api/auth', authRoutes);
 
-// Rotas de usuário
 const userRoutes = Router();
 userRoutes.get('/me', authMiddleware, UserController.me);
 userRoutes.get('/details', authMiddleware, UserController.getCurrentUserDetails);
@@ -42,12 +43,10 @@ userRoutes.put('/change-password', authMiddleware, UserController.changePassword
 userRoutes.get('/:id', authMiddleware, UserController.getUserDetails);
 routes.use('/api/user', userRoutes);
 
-// Rotas de assinatura
 const subscriptionRoutes = Router();
 subscriptionRoutes.get('/my-subscriptions', authMiddleware, UserController.getSubscriptions);
 routes.use('/api/subscription', subscriptionRoutes);
 
-// Rota de criação de conta
 routes.post(
   '/api/criar-conta',
   authLimiter,
@@ -65,9 +64,7 @@ routes.post(
   AuthController.criarConta
 );
 
-// Rotas administrativas com rate limiter específico
 const adminRoutes = Router();
-// Aplica authMiddleware e requireAdmin ANTES, depois rate limiter em cada rota
 adminRoutes.get('/auth/status', authMiddleware, requireAdmin, adminLimiter, AuthController.checkAdminAuthStatus);
 adminRoutes.post('/planos', authMiddleware, requireAdmin, adminLimiter, PlanosController.create);
 adminRoutes.get('/planos', authMiddleware, requireAdmin, adminLimiter, PlanosController.list);
@@ -75,14 +72,18 @@ adminRoutes.put('/planos/:id', authMiddleware, requireAdmin, adminLimiter, Plano
 adminRoutes.delete('/planos/:id', authMiddleware, requireAdmin, adminLimiter, PlanosController.delete);
 adminRoutes.get('/pagamentos', authMiddleware, requireAdmin, adminLimiter, PaymentController.listAdminPayments);
 
-// Rotas de cupons (admin)
 adminRoutes.get('/cupons', authMiddleware, requireAdmin, adminLimiter, CuponsController.listar);
 adminRoutes.post('/cupons', authMiddleware, requireAdmin, adminLimiter, CuponsController.criar);
 adminRoutes.put('/cupons/:id', authMiddleware, requireAdmin, adminLimiter, CuponsController.atualizar);
 adminRoutes.delete('/cupons/:id', authMiddleware, requireAdmin, adminLimiter, CuponsController.deletar);
+
+// Rotas de logs do sistema
+adminRoutes.get('/logs', authMiddleware, requireAdmin, getLogs);
+adminRoutes.get('/logs/stats', authMiddleware, requireAdmin, getLogsStats);
+adminRoutes.delete('/logs', authMiddleware, requireAdmin, deleteLogs);
+
 routes.use('/api/admin', adminRoutes);
 
-// Rotas de pagamento
 routes.post('/api/payments/initiate', authMiddleware, paymentLimiter, PaymentController.initiatePayment);
 routes.post('/api/payments/qr-code', authMiddleware, paymentLimiter, PaymentController.generateQrCode);
 routes.post('/api/payments/webhook', PaymentController.handleWebhook);
@@ -90,10 +91,8 @@ routes.get('/api/payments/status/:id', paymentStatusLimiter, PaymentController.g
 routes.get('/api/payments/:id', paymentStatusLimiter, PaymentController.getPaymentDetails);
 routes.post('/api/payments/:id/expire', paymentLimiter, PaymentController.expirePayment);
 
-// Rotas de planos (públicas - para landing page)
 routes.get('/api/planos', publicApiLimiter, PlanosController.list);
 
-// Rotas de carrinho (rotas específicas ANTES das genéricas)
 routes.post('/api/carrinho/cupom', authMiddleware, CarrinhoController.aplicarCupom);
 routes.delete('/api/carrinho/cupom', authMiddleware, CarrinhoController.removerCupom);
 routes.get('/api/carrinho', authMiddleware, CarrinhoController.listar);
@@ -102,7 +101,6 @@ routes.delete('/api/carrinho/:id', authMiddleware, CarrinhoController.remover);
 routes.put('/api/carrinho/:id/quantidade', authMiddleware, CarrinhoController.atualizarQuantidade);
 routes.delete('/api/carrinho', authMiddleware, CarrinhoController.limpar);
 
-// Rota pública para validar cupons (mantida para compatibilidade)
 routes.post('/api/cupons/validar', authMiddleware, CuponsController.validar);
 
 export default routes;

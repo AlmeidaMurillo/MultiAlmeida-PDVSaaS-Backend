@@ -1,7 +1,3 @@
-/**
- * Sistema de logging de eventos de segurança
- */
-
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -11,14 +7,10 @@ const __dirname = path.dirname(__filename);
 
 const logsDir = path.join(__dirname, '../../logs');
 
-// Cria diretório de logs se não existir
 if (!fs.existsSync(logsDir)) {
   fs.mkdirSync(logsDir, { recursive: true });
 }
 
-/**
- * Níveis de severidade
- */
 export const SecurityLevel = {
   INFO: 'INFO',
   WARNING: 'WARNING',
@@ -26,9 +18,6 @@ export const SecurityLevel = {
   ATTACK: 'ATTACK'
 };
 
-/**
- * Tipos de eventos de segurança
- */
 export const SecurityEvent = {
   LOGIN_SUCCESS: 'LOGIN_SUCCESS',
   LOGIN_FAILED: 'LOGIN_FAILED',
@@ -45,9 +34,6 @@ export const SecurityEvent = {
   PERMISSION_DENIED: 'PERMISSION_DENIED'
 };
 
-/**
- * Registra evento de segurança
- */
 export const logSecurityEvent = (level, event, details = {}) => {
   const timestamp = new Date().toISOString();
   const logEntry = {
@@ -57,7 +43,6 @@ export const logSecurityEvent = (level, event, details = {}) => {
     ...details
   };
 
-  // Log em arquivo
   const logFile = path.join(logsDir, `security-${new Date().toISOString().split('T')[0]}.log`);
   const logLine = JSON.stringify(logEntry) + '\n';
   
@@ -67,7 +52,6 @@ export const logSecurityEvent = (level, event, details = {}) => {
     }
   });
 
-  // Log no console com cores
   const colors = {
     INFO: '\x1b[36m',      // Cyan
     WARNING: '\x1b[33m',    // Yellow
@@ -81,18 +65,13 @@ export const logSecurityEvent = (level, event, details = {}) => {
   console.log(`${color}[${level}] ${event}${reset}`, details);
 };
 
-/**
- * Middleware para logar requisições suspeitas
- */
 export const securityLoggerMiddleware = (req, res, next) => {
   const start = Date.now();
   
-  // Captura resposta
   const originalSend = res.send;
   res.send = function(data) {
     const duration = Date.now() - start;
     
-    // Loga requisições que falharam com erro de autenticação ou autorização
     if (res.statusCode === 401 || res.statusCode === 403) {
       logSecurityEvent(
         SecurityLevel.WARNING,
@@ -109,7 +88,6 @@ export const securityLoggerMiddleware = (req, res, next) => {
       );
     }
     
-    // Loga requisições suspeitas (muitas no mesmo segundo)
     if (res.statusCode === 429) {
       logSecurityEvent(
         SecurityLevel.WARNING,
@@ -130,9 +108,6 @@ export const securityLoggerMiddleware = (req, res, next) => {
   next();
 };
 
-/**
- * Loga tentativa de login
- */
 export const logLoginAttempt = (success, email, ip, userAgent, userId = null) => {
   logSecurityEvent(
     success ? SecurityLevel.INFO : SecurityLevel.WARNING,
@@ -146,9 +121,6 @@ export const logLoginAttempt = (success, email, ip, userAgent, userId = null) =>
   );
 };
 
-/**
- * Loga mudança de senha
- */
 export const logPasswordChange = (userId, ip) => {
   logSecurityEvent(
     SecurityLevel.INFO,
@@ -160,24 +132,18 @@ export const logPasswordChange = (userId, ip) => {
   );
 };
 
-/**
- * Loga tentativa de injeção SQL
- */
 export const logSqlInjectionAttempt = (input, ip, path) => {
   logSecurityEvent(
     SecurityLevel.ATTACK,
     SecurityEvent.SQL_INJECTION_ATTEMPT,
     {
-      input: input.substring(0, 100), // Limita tamanho
+      input: input.substring(0, 100),
       ip,
       path
     }
   );
 };
 
-/**
- * Loga tentativa de XSS
- */
 export const logXssAttempt = (input, ip, path) => {
   logSecurityEvent(
     SecurityLevel.ATTACK,
@@ -190,9 +156,6 @@ export const logXssAttempt = (input, ip, path) => {
   );
 };
 
-/**
- * Detecta padrões suspeitos em strings
- */
 export const detectSuspiciousPatterns = (str) => {
   if (typeof str !== 'string') return null;
   
@@ -212,9 +175,6 @@ export const detectSuspiciousPatterns = (str) => {
   return null;
 };
 
-/**
- * Middleware para detectar ataques comuns
- */
 export const attackDetectionMiddleware = (req, res, next) => {
   const checkValue = (value, path) => {
     if (typeof value === 'string') {
@@ -251,7 +211,6 @@ export const attackDetectionMiddleware = (req, res, next) => {
     return null;
   };
   
-  // Verifica body, query e params
   const checks = [
     checkValue(req.body, 'body'),
     checkValue(req.query, 'query'),
