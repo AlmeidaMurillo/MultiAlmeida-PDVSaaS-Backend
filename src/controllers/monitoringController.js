@@ -56,10 +56,9 @@ export const getLogs = async (req, res) => {
     const [countResult] = await pool.execute(countQuery, params);
     const total = countResult[0]?.total || 0;
 
-    // Paginação
+    // Paginação - usar interpolação direta ao invés de placeholders para LIMIT/OFFSET
     const offset = (paginaNum - 1) * limiteNum;
-    query += ' ORDER BY criado_em DESC LIMIT ? OFFSET ?';
-    params.push(limiteNum, offset);
+    query += ` ORDER BY criado_em DESC LIMIT ${limiteNum} OFFSET ${offset}`;
 
     const [logs] = await pool.execute(query, params);
 
