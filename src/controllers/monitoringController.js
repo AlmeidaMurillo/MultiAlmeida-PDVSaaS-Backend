@@ -17,6 +17,10 @@ export const getLogs = async (req, res) => {
       pagina = 1,
     } = req.query;
 
+    // Validar limite e página
+    const limiteNum = Math.min(Math.max(parseInt(limite) || 100, 1), 1000);
+    const paginaNum = Math.max(parseInt(pagina) || 1, 1);
+
     let query = 'SELECT * FROM logs_sistema WHERE 1=1';
     const params = [];
 
@@ -53,12 +57,12 @@ export const getLogs = async (req, res) => {
     // Contar total
     const countQuery = query.replace('SELECT *', 'SELECT COUNT(*) as total');
     const [countResult] = await pool.execute(countQuery, params);
-    const total = countResult[0].total;
+    const total = countResult[0]?.total || 0;
 
     // Paginação
-    const offset = (parseInt(pagina) - 1) * parseInt(limite);
+    const offset = (paginaNum - 1) * limiteNum;
     query += ' ORDER BY criado_em DESC LIMIT ? OFFSET ?';
-    params.push(parseInt(limite), offset);
+    params.push(limiteNum, offset);
 
     const [logs] = await pool.execute(query, params);
 
@@ -87,15 +91,18 @@ export const getLogs = async (req, res) => {
       data: logsFormatados,
       pagination: {
         total,
-        pagina: parseInt(pagina),
-        limite: parseInt(limite),
-        totalPaginas: Math.ceil(total / parseInt(limite)),
+        pagina: paginaNum,
+        limite: limiteNum,
+        totalPaginas: Math.ceil(total / limiteNum),
       },
     });
   } catch (error) {
     console.error('❌ Erro ao buscar logs:', error);
+    console.error('Stack:', error.stack);
     res.status(500).json({
       error: 'Erro ao buscar logs do sistema',
+      message: error.message,
+      details: process.env.NODE_ENV === 'development' ? error.stack : undefined,
     });
   }
 };
