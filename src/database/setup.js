@@ -178,6 +178,8 @@ async function setupDatabase() {
                 ) NOT NULL,
                 usuario_id VARCHAR(36) NULL,
                 email VARCHAR(255) NULL,
+                nome VARCHAR(255) NULL,
+                cargo VARCHAR(100) NULL,
                 ip VARCHAR(45) NULL,
                 acao VARCHAR(200) NOT NULL,
                 detalhes JSON NULL,
@@ -187,6 +189,8 @@ async function setupDatabase() {
                 INDEX idx_criado (criado_em),
                 INDEX idx_tipo_data (tipo, criado_em),
                 INDEX idx_email (email),
+                INDEX idx_nome (nome),
+                INDEX idx_cargo (cargo),
                 INDEX idx_ip (ip)
             )
         `);

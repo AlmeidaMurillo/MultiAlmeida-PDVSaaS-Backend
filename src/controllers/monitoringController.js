@@ -7,6 +7,8 @@ export const getLogs = async (req, res) => {
       tipo,
       usuario_id,
       email,
+      nome,
+      cargo,
       ip,
       data_inicio,
       data_fim,
@@ -34,6 +36,16 @@ export const getLogs = async (req, res) => {
     if (email) {
       query += ' AND email LIKE ?';
       params.push(`%${email}%`);
+    }
+
+    if (nome) {
+      query += ' AND nome LIKE ?';
+      params.push(`%${nome}%`);
+    }
+
+    if (cargo) {
+      query += ' AND cargo LIKE ?';
+      params.push(`%${cargo}%`);
     }
 
     if (ip) {

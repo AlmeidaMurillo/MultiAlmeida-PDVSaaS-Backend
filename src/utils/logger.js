@@ -19,16 +19,20 @@ export async function log(tipo, req, acao, detalhes = {}, usuario = null) {
     const id = uuidv4();
     const usuarioId = usuario?.id || req?.user?.id || null;
     const email = usuario?.email || req?.user?.email || null;
+    const nome = usuario?.nome || req?.user?.nome || null;
+    const cargo = usuario?.papel || req?.user?.papel || null;
     const ip = req?.ip || req?.connection?.remoteAddress || null;
     
     await pool.execute(
-      `INSERT INTO logs_sistema (id, tipo, usuario_id, email, ip, acao, detalhes) 
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO logs_sistema (id, tipo, usuario_id, email, nome, cargo, ip, acao, detalhes) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         id,
         tipo,
         usuarioId,
         email,
+        nome,
+        cargo,
         ip,
         acao,
         JSON.stringify(detalhes)
@@ -39,6 +43,8 @@ export async function log(tipo, req, acao, detalhes = {}, usuario = null) {
     if (process.env.NODE_ENV !== 'production') {
       console.log(`📝 [${tipo.toUpperCase()}] ${acao}`, {
         usuario: email || usuarioId || 'anônimo',
+        nome: nome || 'N/A',
+        cargo: cargo || 'N/A',
         ip,
       });
     }
