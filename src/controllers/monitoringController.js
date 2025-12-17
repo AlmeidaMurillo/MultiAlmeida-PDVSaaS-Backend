@@ -1,9 +1,6 @@
 import pool from '../db.js';
 
-/**
- * GET /api/admin/logs
- * Retorna logs do sistema com filtros
- */
+
 export const getLogs = async (req, res) => {
   try {
     const {
@@ -107,10 +104,6 @@ export const getLogs = async (req, res) => {
   }
 };
 
-/**
- * GET /api/admin/logs/stats
- * Retorna estatísticas dos logs
- */
 export const getLogsStats = async (req, res) => {
   try {
     const { periodo = 30 } = req.query;
@@ -183,10 +176,7 @@ export const getLogsStats = async (req, res) => {
   }
 };
 
-/**
- * DELETE /api/admin/logs
- * Limpa logs antigos
- */
+
 export const deleteLogs = async (req, res) => {
   try {
     const { dias = 90 } = req.body;
