@@ -96,12 +96,25 @@ class UserController {
         return res.status(404).json({ message: "Usuário não encontrado." });
       }
 
+      const dadosAntigos = {
+        nome: userRows[0].nome,
+        email: userRows[0].email
+      };
+
       await pool.execute(
         "UPDATE usuarios SET nome = ?, email = ? WHERE id = ?",
         [nome.trim(), email.toLowerCase().trim(), userId]
       );
 
-      await log('perfil_atualizado', req, 'Atualizou perfil', { nome, email });
+      await log('perfil_atualizado', req, 'Atualizou perfil', { 
+        usuario_id: userId,
+        dados_antigos: dadosAntigos,
+        dados_novos: { nome: nome.trim(), email: email.toLowerCase().trim() },
+        campos_alterados: [
+          dadosAntigos.nome !== nome.trim() ? 'nome' : null,
+          dadosAntigos.email !== email.toLowerCase().trim() ? 'email' : null
+        ].filter(Boolean)
+      });
 
       res.status(200).json({ message: "Dados atualizados com sucesso." });
     } catch (error) {
@@ -133,7 +146,12 @@ class UserController {
       const senhaValida = await bcrypt.compare(senhaAtual, usuario.senha);
 
       if (!senhaValida) {
-        await log('validacao_falha', req, 'Tentou alterar senha com senha incorreta');
+        await log('validacao_falha', req, 'Tentou alterar senha com senha incorreta', {
+          usuario_id: userId,
+          tentativa_ip: req.ip,
+          user_agent: req.headers['user-agent'],
+          timestamp: new Date().toISOString()
+        });
         return res.status(401).json({ message: "Senha atual incorreta" });
       }
 
@@ -141,7 +159,12 @@ class UserController {
 
       await pool.execute("UPDATE usuarios SET senha = ? WHERE id = ?", [novaSenhaHash, userId]);
 
-      await log('senha_alterada', req, 'Alterou senha com sucesso');
+      await log('senha_alterada', req, 'Alterou senha com sucesso', {
+        usuario_id: userId,
+        alterado_em: new Date().toISOString(),
+        dispositivo: req.headers['user-agent'] || 'unknown',
+        endereco_ip: req.ip
+      });
 
       return res.status(200).json({ message: "Senha alterada com sucesso" });
     } catch (error) {

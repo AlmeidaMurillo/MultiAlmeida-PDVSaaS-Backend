@@ -1,6 +1,7 @@
 import { v4 as uuidv4 } from "uuid";
 import pool from "../db.js";
 import { parsePlanos, formatPreco } from "../utils/dataParser.js";
+import { log } from "../utils/logger.js";
 
 class PlanosController {
   async create(req, res) {
@@ -32,6 +33,17 @@ class PlanosController {
                  beneficios = VALUES(beneficios)`,
         [id, nome, periodo, preco, duracaoDias, JSON.stringify(beneficios)]
       );
+
+      await log('admin_plano', req, 'Criou plano', {
+        plano_id: id,
+        nome,
+        periodo,
+        preco: parseFloat(preco),
+        duracao_dias: duracaoDias,
+        quantidade_beneficios: beneficios.length,
+        beneficios: beneficios,
+        criado_em: new Date().toISOString()
+      });
 
       return res.status(201).json({
         message: "Plano criado/atualizado com sucesso",
@@ -110,12 +122,48 @@ class PlanosController {
       let { nome, periodo, preco, duracaoDias, beneficios } = req.body;
       preco = formatPreco(preco);
 
+      // Buscar dados antigos
+      const [planosAntigos] = await pool.execute('SELECT * FROM planos WHERE id = ?', [id]);
+      if (planosAntigos.length === 0) {
+        return res.status(404).json({ error: "Plano não encontrado" });
+      }
+
+      const planoAntigo = planosAntigos[0];
+      if (typeof planoAntigo.beneficios === 'string') {
+        planoAntigo.beneficios = JSON.parse(planoAntigo.beneficios);
+      }
+
       await pool.execute(
         `UPDATE planos 
                  SET nome = ?, periodo = ?, preco = ?, duracao_dias = ?, beneficios = ?
                  WHERE id = ?`,
         [nome, periodo, preco, duracaoDias, JSON.stringify(beneficios), id]
       );
+
+      await log('admin_plano', req, 'Atualizou plano', {
+        plano_id: id,
+        dados_antigos: {
+          nome: planoAntigo.nome,
+          periodo: planoAntigo.periodo,
+          preco: parseFloat(planoAntigo.preco),
+          duracao_dias: planoAntigo.duracao_dias,
+          beneficios: planoAntigo.beneficios
+        },
+        dados_novos: {
+          nome,
+          periodo,
+          preco: parseFloat(preco),
+          duracao_dias: duracaoDias,
+          beneficios
+        },
+        campos_alterados: [
+          planoAntigo.nome !== nome ? 'nome' : null,
+          planoAntigo.periodo !== periodo ? 'periodo' : null,
+          parseFloat(planoAntigo.preco) !== parseFloat(preco) ? 'preco' : null,
+          planoAntigo.duracao_dias !== duracaoDias ? 'duracao_dias' : null,
+          JSON.stringify(planoAntigo.beneficios) !== JSON.stringify(beneficios) ? 'beneficios' : null
+        ].filter(Boolean)
+      });
 
       return res.status(200).json({ message: "Plano atualizado com sucesso" });
     } catch (error) {
@@ -127,7 +175,31 @@ class PlanosController {
   async delete(req, res) {
     try {
       const { id } = req.params;
+
+      // Buscar dados do plano antes de deletar
+      const [planos] = await pool.execute('SELECT * FROM planos WHERE id = ?', [id]);
+      if (planos.length === 0) {
+        return res.status(404).json({ error: "Plano não encontrado" });
+      }
+
+      const plano = planos[0];
+      if (typeof plano.beneficios === 'string') {
+        plano.beneficios = JSON.parse(plano.beneficios);
+      }
+
       await pool.execute("DELETE FROM planos WHERE id = ?", [id]);
+
+      await log('admin_plano', req, 'Deletou plano', {
+        plano_id: id,
+        nome: plano.nome,
+        periodo: plano.periodo,
+        preco: parseFloat(plano.preco),
+        duracao_dias: plano.duracao_dias,
+        beneficios: plano.beneficios,
+        quantidade_empresas: plano.quantidade_empresas,
+        deletado_em: new Date().toISOString()
+      });
+
       return res.status(200).json({ message: "Plano excluído com sucesso" });
     } catch (error) {
       console.error("Erro excluindo plano:", error);

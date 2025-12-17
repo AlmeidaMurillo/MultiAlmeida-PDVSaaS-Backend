@@ -9,7 +9,19 @@ class CuponsController {
         'SELECT * FROM cupons ORDER BY created_at DESC'
       );
 
-      await log('admin_cupom', req, 'Listou cupons', { total: cupons.length });
+      const cuponsAtivos = cupons.filter(c => c.ativo === 1).length;
+      const cuponsInativos = cupons.filter(c => c.ativo === 0).length;
+      const cuponsPercentuais = cupons.filter(c => c.tipo === 'percentual').length;
+      const cuponsFixos = cupons.filter(c => c.tipo === 'fixo').length;
+
+      await log('admin_cupom', req, 'Listou cupons', { 
+        total: cupons.length,
+        cupons_ativos: cuponsAtivos,
+        cupons_inativos: cuponsInativos,
+        cupons_percentuais: cuponsPercentuais,
+        cupons_fixos: cuponsFixos,
+        listado_em: new Date().toISOString()
+      });
 
       return res.json(cupons);
     } catch (error) {
@@ -77,7 +89,18 @@ class CuponsController {
         [id]
       );
 
-      await log('admin_cupom', req, 'Criou cupom', { codigo, tipo, valor });
+      await log('admin_cupom', req, 'Criou cupom', { 
+        cupom_id: id,
+        codigo: codigo.toUpperCase(), 
+        tipo, 
+        valor: parseFloat(valor),
+        quantidade_maxima: quantidade_maxima || 'Ilimitado',
+        quantidade_usada: 0,
+        data_inicio,
+        data_fim,
+        ativo,
+        criado_em: new Date().toISOString()
+      });
 
       return res.status(201).json(novoCupom[0]);
     } catch (error) {
@@ -180,7 +203,20 @@ class CuponsController {
         [id]
       );
 
-      await log('admin_cupom', req, 'Atualizou cupom', { id, campos: campos.length });
+      await log('admin_cupom', req, 'Atualizou cupom', { 
+        cupom_id: id,
+        codigo: cupomAtualizado[0].codigo,
+        tipo: cupomAtualizado[0].tipo,
+        valor: cupomAtualizado[0].valor,
+        quantidade_maxima: cupomAtualizado[0].quantidade_maxima || 'Ilimitado',
+        quantidade_usada: cupomAtualizado[0].quantidade_usada,
+        data_inicio: cupomAtualizado[0].data_inicio,
+        data_fim: cupomAtualizado[0].data_fim,
+        ativo: cupomAtualizado[0].ativo,
+        campos_alterados: campos.length,
+        campos_modificados: campos,
+        atualizado_em: new Date().toISOString()
+      });
 
       return res.json(cupomAtualizado[0]);
     } catch (error) {
@@ -204,7 +240,13 @@ class CuponsController {
 
       await pool.execute('DELETE FROM cupons WHERE id = ?', [id]);
 
-      await log('admin_cupom', req, 'Deletou cupom', { id, codigo: cupom[0].codigo });
+      await log('admin_cupom', req, 'Deletou cupom', { 
+        cupom_id: id,
+        codigo: cupom[0].codigo,
+        tipo: cupom[0].tipo,
+        valor: cupom[0].valor,
+        quantidade_usada: cupom[0].quantidade_usada
+      });
 
       return res.json({ message: 'Cupom deletado com sucesso' });
     } catch (error) {

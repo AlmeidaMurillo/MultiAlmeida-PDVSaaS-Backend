@@ -132,7 +132,7 @@ class PaymentController {
       }
 
       const [pagamentoRows] = await connection.execute(
-        "SELECT usuario_id, plano_id, cupom_id FROM pagamentos_assinatura WHERE id = ?",
+        "SELECT usuario_id, plano_id, cupom_id, valor FROM pagamentos_assinatura WHERE id = ?",
         [nossoPagamentoId]
       );
 
@@ -141,13 +141,44 @@ class PaymentController {
         return res.status(404).send("Pagamento não encontrado.");
       }
 
-      const { usuario_id, plano_id, cupom_id } = pagamentoRows[0];
+      const { usuario_id, plano_id, cupom_id, valor } = pagamentoRows[0];
 
       if (novoStatusPagamento === "aprovado") {
         const [planoRows] = await connection.execute(
-          "SELECT duracao_dias FROM planos WHERE id = ?",
+          "SELECT nome, periodo, preco, duracao_dias FROM planos WHERE id = ?",
           [plano_id]
         );
+        
+        const [usuarioRows] = await connection.execute(
+          "SELECT nome, email FROM usuarios WHERE id = ?",
+          [usuario_id]
+        );
+        
+        let detalhesLog = {
+          pagamento_id: nossoPagamentoId,
+          mercadopago_id: payment.id,
+          valor_pago: valor,
+          plano: planoRows[0]?.nome || 'N/A',
+          periodo: planoRows[0]?.periodo || 'N/A',
+          duracao_dias: planoRows[0]?.duracao_dias || 0,
+          metodo_pagamento: payment.payment_method_id || 'N/A',
+          usuario_nome: usuarioRows[0]?.nome || 'N/A',
+          usuario_email: usuarioRows[0]?.email || 'N/A'
+        };
+        
+        if (cupom_id) {
+          const [cupomRows] = await connection.execute(
+            "SELECT codigo, tipo, valor FROM cupons WHERE id = ?",
+            [cupom_id]
+          );
+          if (cupomRows.length > 0) {
+            detalhesLog.cupom_codigo = cupomRows[0].codigo;
+            detalhesLog.cupom_tipo = cupomRows[0].tipo;
+            detalhesLog.cupom_valor = cupomRows[0].valor;
+          }
+        }
+        
+        await log('pagamento', req, 'Pagamento aprovado', detalhesLog, { id: usuario_id, email: usuarioRows[0]?.email, nome: usuarioRows[0]?.nome });
 
         if (!planoRows.length) {
           await connection.rollback();
@@ -226,6 +257,12 @@ class PaymentController {
               [id]
             );
             
+            // Buscar detalhes do pagamento para log
+            const [pagDetalhes] = await connection.execute(
+              "SELECT pa.usuario_id, pa.valor, pl.nome as plano_nome, u.email, u.nome as usuario_nome FROM pagamentos_assinatura pa LEFT JOIN planos pl ON pa.plano_id = pl.id LEFT JOIN usuarios u ON pa.usuario_id = u.id WHERE pa.id = ?",
+              [id]
+            );
+            
             if (payment.assinatura_id) {
               await connection.execute(
                 "UPDATE assinaturas SET status = 'inativa' WHERE id = ?",
@@ -234,6 +271,18 @@ class PaymentController {
             }
             
             await connection.commit();
+            
+            // Log de pagamento expirado
+            if (pagDetalhes.length > 0) {
+              await log('pagamento', req, 'Pagamento expirado por tempo limite', {
+                pagamento_id: id,
+                valor: pagDetalhes[0].valor,
+                plano: pagDetalhes[0].plano_nome,
+                usuario_nome: pagDetalhes[0].usuario_nome,
+                usuario_email: pagDetalhes[0].email
+              }, { id: pagDetalhes[0].usuario_id, email: pagDetalhes[0].email, nome: pagDetalhes[0].usuario_nome });
+            }
+            
             payment.status = "expirado";
           } catch (err) {
             await connection.rollback();

@@ -107,7 +107,22 @@ class CarrinhoController {
 
         await connection.commit();
         
-        await log('carrinho_adicionar', req, 'Adicionou item ao carrinho', { planoId, periodo, quantidade });
+        // Buscar detalhes do plano adicionado
+        const [planoDetalhes] = await connection.execute(
+          'SELECT nome, periodo, preco FROM planos WHERE id = ? AND periodo = ?',
+          [planoId, periodo]
+        );
+
+        await log('carrinho_adicionar', req, 'Adicionou item ao carrinho', { 
+          item_id: id,
+          plano_id: planoId,
+          plano_nome: planoDetalhes[0]?.nome,
+          periodo,
+          quantidade,
+          preco_unitario: planoDetalhes[0] ? parseFloat(planoDetalhes[0].preco) : null,
+          valor_total: planoDetalhes[0] ? parseFloat(planoDetalhes[0].preco) * quantidade : null,
+          adicionado_em: new Date().toISOString()
+        });
         
         res.json({ message: "Item adicionado ao carrinho" });
         return; 
@@ -134,17 +149,39 @@ class CarrinhoController {
       const usuarioId = req.user.id;
       const { id } = req.params;
 
+      // Buscar detalhes antes de remover
+      const [itemDetalhes] = await pool.execute(
+        `SELECT c.id, c.plano_id, c.periodo, c.quantidade, p.nome, p.preco
+         FROM carrinho_usuarios c
+         JOIN planos p ON c.plano_id = p.id AND c.periodo = p.periodo
+         WHERE c.id = ? AND c.usuario_id = ?`,
+        [id, usuarioId]
+      );
+
       const [result] = await pool.execute(
         "DELETE FROM carrinho_usuarios WHERE id = ? AND usuario_id = ?",
         [id, usuarioId]
       );
 
       if (result.affectedRows === 0) {
-        await log('tentativa_acesso', req, 'Tentou remover item inexistente do carrinho', { id });
+        await log('tentativa_acesso', req, 'Tentou remover item inexistente do carrinho', { 
+          item_id: id,
+          tentativa_ip: req.ip,
+          timestamp: new Date().toISOString()
+        });
         return res.status(404).json({ error: "Item não encontrado no carrinho" });
       }
 
-      await log('carrinho_remover', req, 'Removeu item do carrinho', { id });
+      const item = itemDetalhes[0];
+      await log('carrinho_remover', req, 'Removeu item do carrinho', { 
+        item_id: id,
+        plano_id: item.plano_id,
+        plano_nome: item.nome,
+        periodo: item.periodo,
+        quantidade: item.quantidade,
+        valor_removido: parseFloat(item.preco) * item.quantidade,
+        removido_em: new Date().toISOString()
+      });
 
       res.json({ message: "Item removido do carrinho" });
     } catch (error) {
@@ -158,9 +195,32 @@ class CarrinhoController {
     try {
       const usuarioId = req.user.id;
 
+      // Buscar detalhes antes de limpar
+      const [itensCarrinho] = await pool.execute(
+        `SELECT c.id, c.plano_id, c.quantidade, c.cupom_codigo, c.cupom_desconto, p.nome, p.preco
+         FROM carrinho_usuarios c
+         JOIN planos p ON c.plano_id = p.id AND c.periodo = p.periodo
+         WHERE c.usuario_id = ?`,
+        [usuarioId]
+      );
+
+      const valorTotal = itensCarrinho.reduce((total, item) => {
+        return total + (parseFloat(item.preco) * item.quantidade);
+      }, 0);
+
       const [result] = await pool.execute("DELETE FROM carrinho_usuarios WHERE usuario_id = ?", [usuarioId]);
 
-      await log('carrinho_limpar', req, 'Limpou o carrinho', { itensRemovidos: result.affectedRows });
+      await log('carrinho_limpar', req, 'Limpou o carrinho', { 
+        itens_removidos: result.affectedRows,
+        itens_detalhes: itensCarrinho.map(item => ({
+          plano_nome: item.nome,
+          quantidade: item.quantidade,
+          valor: parseFloat(item.preco) * item.quantidade
+        })),
+        valor_total_perdido: parseFloat(valorTotal.toFixed(2)),
+        cupom_aplicado: itensCarrinho[0]?.cupom_codigo || null,
+        limpo_em: new Date().toISOString()
+      });
 
       res.json({ message: "Carrinho limpo" });
     } catch (error) {
@@ -234,7 +294,12 @@ class CarrinhoController {
       );
 
       if (cupons.length === 0) {
-        await log('cupom_invalido', req, 'Tentou aplicar cupom inexistente', { codigo });
+        await log('cupom_invalido', req, 'Tentou aplicar cupom inexistente', { 
+          codigo_tentado: codigo,
+          tentativa_ip: req.ip,
+          usuario_id: usuarioId,
+          timestamp: new Date().toISOString()
+        });
         return res.status(404).json({ error: 'Cupom não encontrado' });
       }
 
@@ -244,22 +309,51 @@ class CarrinhoController {
       const dataFim = new Date(cupom.data_fim);
 
       if (!cupom.ativo) {
-        await log('cupom_invalido', req, 'Tentou aplicar cupom inativo', { codigo: cupom.codigo });
+        await log('cupom_invalido', req, 'Tentou aplicar cupom inativo', { 
+          cupom_id: cupom.id,
+          codigo: cupom.codigo,
+          tipo: cupom.tipo,
+          valor: cupom.valor,
+          data_inicio: cupom.data_inicio,
+          data_fim: cupom.data_fim,
+          tentativa_ip: req.ip,
+          timestamp: new Date().toISOString()
+        });
         return res.status(400).json({ error: 'Cupom inativo' });
       }
 
       if (agora < dataInicio) {
-        await log('cupom_invalido', req, 'Tentou aplicar cupom antes do início', { codigo: cupom.codigo });
+        await log('cupom_invalido', req, 'Tentou aplicar cupom antes do início', { 
+          cupom_id: cupom.id,
+          codigo: cupom.codigo,
+          data_inicio: cupom.data_inicio,
+          data_atual: agora.toISOString(),
+          dias_faltando: Math.ceil((dataInicio - agora) / (1000 * 60 * 60 * 24)),
+          timestamp: new Date().toISOString()
+        });
         return res.status(400).json({ error: 'Cupom ainda não está disponível' });
       }
 
       if (agora > dataFim) {
-        await log('cupom_invalido', req, 'Tentou aplicar cupom expirado', { codigo: cupom.codigo });
+        await log('cupom_invalido', req, 'Tentou aplicar cupom expirado', { 
+          cupom_id: cupom.id,
+          codigo: cupom.codigo,
+          data_fim: cupom.data_fim,
+          data_atual: agora.toISOString(),
+          dias_expirado: Math.ceil((agora - dataFim) / (1000 * 60 * 60 * 24)),
+          timestamp: new Date().toISOString()
+        });
         return res.status(400).json({ error: 'Cupom expirado' });
       }
 
       if (cupom.quantidade_maxima !== null && cupom.quantidade_usada >= cupom.quantidade_maxima) {
-        await log('cupom_invalido', req, 'Tentou aplicar cupom esgotado', { codigo: cupom.codigo });
+        await log('cupom_invalido', req, 'Tentou aplicar cupom esgotado', { 
+          cupom_id: cupom.id,
+          codigo: cupom.codigo,
+          quantidade_maxima: cupom.quantidade_maxima,
+          quantidade_usada: cupom.quantidade_usada,
+          timestamp: new Date().toISOString()
+        });
         return res.status(400).json({ error: 'Cupom esgotado' });
       }
 
@@ -279,7 +373,29 @@ class CarrinhoController {
         );
       }
 
-      await log('cupom_aplicado', req, 'Aplicou cupom ao carrinho', { codigo: cupom.codigo, desconto, valorTotal });
+      const valorFinalCompra = valorTotal - desconto;
+
+      await log('cupom_aplicado', req, 'Aplicou cupom ao carrinho', { 
+        cupom_id: cupom.id,
+        cupom_codigo: cupom.codigo,
+        cupom_tipo: cupom.tipo,
+        cupom_valor: cupom.valor,
+        cupom_data_inicio: cupom.data_inicio,
+        cupom_data_fim: cupom.data_fim,
+        desconto_aplicado: parseFloat(desconto.toFixed(2)),
+        valor_total: parseFloat(valorTotal.toFixed(2)),
+        valor_desconto: parseFloat(desconto.toFixed(2)),
+        valor_final_compra: parseFloat(valorFinalCompra.toFixed(2)),
+        quantidade_itens: cartItems.length,
+        quantidade_usada_antes: cupom.quantidade_usada,
+        quantidade_maxima: cupom.quantidade_maxima || 'Ilimitado',
+        itens_carrinho: cartItems.map(item => ({
+          plano_id: item.plano_id,
+          quantidade: item.quantidade,
+          preco: parseFloat(item.preco)
+        })),
+        aplicado_em: new Date().toISOString()
+      });
 
       res.json({
         message: 'Cupom aplicado com sucesso',
@@ -289,7 +405,9 @@ class CarrinhoController {
           valor: cupom.valor,
           desconto: parseFloat(desconto.toFixed(2)),
           valor_original: parseFloat(valorTotal.toFixed(2)),
-          valor_final: parseFloat((valorTotal - desconto).toFixed(2))
+          valor_desconto: parseFloat(desconto.toFixed(2)),
+          valor_final_compra: parseFloat(valorFinalCompra.toFixed(2)),
+          valor_final: parseFloat(valorFinalCompra.toFixed(2))
         }
       });
     } catch (error) {
@@ -302,12 +420,22 @@ class CarrinhoController {
     try {
       const usuarioId = req.user.id;
 
+      // Buscar detalhes do cupom antes de remover
+      const [carrinhoAtual] = await pool.execute(
+        'SELECT cupom_codigo, cupom_desconto FROM carrinho_usuarios WHERE usuario_id = ? AND cupom_codigo IS NOT NULL LIMIT 1',
+        [usuarioId]
+      );
+
       await pool.execute(
         'UPDATE carrinho_usuarios SET cupom_codigo = NULL, cupom_desconto = 0 WHERE usuario_id = ?',
         [usuarioId]
       );
 
-      await log('cupom_removido', req, 'Removeu cupom do carrinho');
+      await log('cupom_removido', req, 'Removeu cupom do carrinho', {
+        cupom_codigo: carrinhoAtual[0]?.cupom_codigo,
+        desconto_perdido: carrinhoAtual[0] ? parseFloat(carrinhoAtual[0].cupom_desconto) : 0,
+        removido_em: new Date().toISOString()
+      });
 
       res.json({ message: 'Cupom removido com sucesso' });
     } catch (error) {

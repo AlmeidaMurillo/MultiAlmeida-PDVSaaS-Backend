@@ -168,7 +168,12 @@ class AuthController {
         logLoginAttempt(false, email, req.ip, req.headers['user-agent']);
         
         // Registrar tentativa de login falhada
-        await logLogin(req, { email }, false);
+        await logLogin(req, { 
+          email,
+          tentativa_ip: req.ip,
+          user_agent: req.headers['user-agent'],
+          motivo: userRows.length === 0 ? 'email_nao_encontrado' : 'senha_incorreta'
+        }, false);
         
         await new Promise(resolve => setTimeout(resolve, 1000));
         
@@ -218,7 +223,13 @@ class AuthController {
       });
 
       // Registrar log de login
-      await logLogin(req, usuario, true);
+      await logLogin(req, {
+        ...usuario,
+        sessao_id: validSession?.id,
+        token_expira_em: refreshTokenExpires.toISOString(),
+        dispositivo: req.headers['user-agent'] || 'unknown',
+        endereco_ip: req.ip
+      }, true);
 
       return res.json({
         accessToken,
@@ -295,7 +306,13 @@ class AuthController {
           );
           
           // Registrar log de logout
-          await logLogout(req, { id: userId, email: userEmail });
+          await logLogout(req, { 
+            id: userId, 
+            email: userEmail,
+            sessao_id: validSession.id,
+            dispositivo: req.headers['user-agent'] || 'unknown',
+            endereco_ip: req.ip
+          });
         }
       }
 
@@ -512,7 +529,14 @@ class AuthController {
       );
       
       // Registrar log de registro
-      await logRegistro(req, usuario);
+      await logRegistro(req, {
+        ...usuario,
+        usuario_id: usuarioId,
+        token_expira_em: refreshTokenExpires.toISOString(),
+        dispositivo: req.headers['user-agent'] || 'unknown',
+        endereco_ip: req.ip,
+        metodo_registro: 'formulario_padrao'
+      });
       
       return res.status(201).json({
         message: "Conta criada com sucesso",
