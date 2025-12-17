@@ -62,11 +62,25 @@ export const getLogs = async (req, res) => {
 
     const [logs] = await pool.execute(query, params);
 
-    // Parse JSON detalhes
-    const logsFormatados = logs.map(log => ({
-      ...log,
-      detalhes: log.detalhes ? JSON.parse(log.detalhes) : null,
-    }));
+    // Parse JSON detalhes com segurança
+    const logsFormatados = logs.map(log => {
+      let detalhes = null;
+      if (log.detalhes) {
+        try {
+          // Se já for objeto, mantém; se for string, faz parse
+          detalhes = typeof log.detalhes === 'string' 
+            ? JSON.parse(log.detalhes) 
+            : log.detalhes;
+        } catch (e) {
+          console.warn('⚠️ Erro ao fazer parse de detalhes do log:', log.id, e.message);
+          detalhes = { erro: 'Dados corrompidos' };
+        }
+      }
+      return {
+        ...log,
+        detalhes,
+      };
+    });
 
     res.json({
       success: true,
