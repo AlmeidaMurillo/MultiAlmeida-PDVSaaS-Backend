@@ -288,8 +288,8 @@ class AuthController {
         if (validSession) {
           userId = validSession.usuario_id;
           
-          // Buscar email do usuário
-          const [userRows] = await pool.execute('SELECT email FROM usuarios WHERE id = ?', [userId]);
+          // Buscar dados completos do usuário
+          const [userRows] = await pool.execute('SELECT email, nome, papel FROM usuarios WHERE id = ?', [userId]);
           if (userRows.length > 0) {
             userEmail = userRows[0].email;
           }
@@ -309,6 +309,8 @@ class AuthController {
           await logLogout(req, { 
             id: userId, 
             email: userEmail,
+            nome: userRows.length > 0 ? userRows[0].nome : null,
+            papel: userRows.length > 0 ? userRows[0].papel : null,
             sessao_id: validSession.id,
             dispositivo: req.headers['user-agent'] || 'unknown',
             endereco_ip: req.ip
