@@ -1,5 +1,6 @@
 import pool from '../db.js';
 import { v4 as uuidv4 } from 'uuid';
+import { log } from '../utils/logger.js';
 
 class CuponsController {
   async listar(req, res) {
@@ -8,9 +9,12 @@ class CuponsController {
         'SELECT * FROM cupons ORDER BY created_at DESC'
       );
 
+      await log('admin_cupom', req, 'Listou cupons', { total: cupons.length });
+
       return res.json(cupons);
     } catch (error) {
       console.error('Erro ao listar cupons:', error);
+      await log('erro', req, 'Erro ao listar cupons', { erro: error.message });
       return res.status(500).json({ error: 'Erro ao listar cupons' });
     }
   }
@@ -73,9 +77,12 @@ class CuponsController {
         [id]
       );
 
+      await log('admin_cupom', req, 'Criou cupom', { codigo, tipo, valor });
+
       return res.status(201).json(novoCupom[0]);
     } catch (error) {
       console.error('Erro ao criar cupom:', error);
+      await log('erro', req, 'Erro ao criar cupom', { erro: error.message });
       return res.status(500).json({ error: 'Erro ao criar cupom' });
     }
   }
@@ -173,6 +180,8 @@ class CuponsController {
         [id]
       );
 
+      await log('admin_cupom', req, 'Atualizou cupom', { id, campos: campos.length });
+
       return res.json(cupomAtualizado[0]);
     } catch (error) {
       console.error('Erro ao atualizar cupom:', error);
@@ -195,9 +204,12 @@ class CuponsController {
 
       await pool.execute('DELETE FROM cupons WHERE id = ?', [id]);
 
+      await log('admin_cupom', req, 'Deletou cupom', { id, codigo: cupom[0].codigo });
+
       return res.json({ message: 'Cupom deletado com sucesso' });
     } catch (error) {
       console.error('Erro ao deletar cupom:', error);
+      await log('erro', req, 'Erro ao deletar cupom', { erro: error.message });
       return res.status(500).json({ error: 'Erro ao deletar cupom' });
     }
   }

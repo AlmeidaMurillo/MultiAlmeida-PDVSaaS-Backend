@@ -166,7 +166,16 @@ async function setupDatabase() {
     await pool.execute(`
             CREATE TABLE IF NOT EXISTS logs_sistema (
                 id VARCHAR(36) PRIMARY KEY,
-                tipo ENUM('rate_limit', 'login', 'logout', 'registro', 'pagamento', 'compra', 'erro', 'admin', 'sessao', 'acesso') NOT NULL,
+                tipo ENUM(
+                    'rate_limit', 'login', 'logout', 'registro', 'pagamento', 'compra', 
+                    'erro', 'admin', 'sessao', 'acesso',
+                    'carrinho_adicionar', 'carrinho_remover', 'carrinho_limpar',
+                    'cupom_aplicado', 'cupom_removido', 'cupom_invalido',
+                    'perfil_atualizado', 'senha_alterada',
+                    'admin_cupom', 'admin_plano', 'admin_empresa', 'admin_usuario',
+                    'tentativa_acesso', 'validacao_falha', 'ataque_detectado',
+                    'token_invalido', 'sessao_expirada'
+                ) NOT NULL,
                 usuario_id VARCHAR(36) NULL,
                 email VARCHAR(255) NULL,
                 ip VARCHAR(45) NULL,

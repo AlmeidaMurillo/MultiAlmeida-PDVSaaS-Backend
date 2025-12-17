@@ -1,5 +1,6 @@
 import pool from '../db.js';
 import bcrypt from 'bcryptjs';
+import { log } from '../utils/logger.js';
 
 class UserController {
   async getUserDetails(req, res) {
@@ -100,6 +101,8 @@ class UserController {
         [nome.trim(), email.toLowerCase().trim(), userId]
       );
 
+      await log('perfil_atualizado', req, 'Atualizou perfil', { nome, email });
+
       res.status(200).json({ message: "Dados atualizados com sucesso." });
     } catch (error) {
       console.error("Erro ao atualizar os dados do usuário:", error);
@@ -130,12 +133,15 @@ class UserController {
       const senhaValida = await bcrypt.compare(senhaAtual, usuario.senha);
 
       if (!senhaValida) {
+        await log('validacao_falha', req, 'Tentou alterar senha com senha incorreta');
         return res.status(401).json({ message: "Senha atual incorreta" });
       }
 
       const novaSenhaHash = await bcrypt.hash(novaSenha, 10);
 
       await pool.execute("UPDATE usuarios SET senha = ? WHERE id = ?", [novaSenhaHash, userId]);
+
+      await log('senha_alterada', req, 'Alterou senha com sucesso');
 
       return res.status(200).json({ message: "Senha alterada com sucesso" });
     } catch (error) {

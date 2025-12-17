@@ -1,5 +1,6 @@
 import pool from "../db.js";
 import { v4 as uuidv4 } from "uuid";
+import { log } from '../utils/logger.js';
 
 class CarrinhoController {
   async listar(req, res) {
@@ -105,6 +106,9 @@ class CarrinhoController {
         );
 
         await connection.commit();
+        
+        await log('carrinho_adicionar', req, 'Adicionou item ao carrinho', { planoId, periodo, quantidade });
+        
         res.json({ message: "Item adicionado ao carrinho" });
         return; 
       } catch (error) {
@@ -136,8 +140,11 @@ class CarrinhoController {
       );
 
       if (result.affectedRows === 0) {
+        await log('tentativa_acesso', req, 'Tentou remover item inexistente do carrinho', { id });
         return res.status(404).json({ error: "Item não encontrado no carrinho" });
       }
+
+      await log('carrinho_remover', req, 'Removeu item do carrinho', { id });
 
       res.json({ message: "Item removido do carrinho" });
     } catch (error) {
@@ -151,7 +158,9 @@ class CarrinhoController {
     try {
       const usuarioId = req.user.id;
 
-      await pool.execute("DELETE FROM carrinho_usuarios WHERE usuario_id = ?", [usuarioId]);
+      const [result] = await pool.execute("DELETE FROM carrinho_usuarios WHERE usuario_id = ?", [usuarioId]);
+
+      await log('carrinho_limpar', req, 'Limpou o carrinho', { itensRemovidos: result.affectedRows });
 
       res.json({ message: "Carrinho limpo" });
     } catch (error) {
@@ -225,6 +234,7 @@ class CarrinhoController {
       );
 
       if (cupons.length === 0) {
+        await log('cupom_invalido', req, 'Tentou aplicar cupom inexistente', { codigo });
         return res.status(404).json({ error: 'Cupom não encontrado' });
       }
 
@@ -234,18 +244,22 @@ class CarrinhoController {
       const dataFim = new Date(cupom.data_fim);
 
       if (!cupom.ativo) {
+        await log('cupom_invalido', req, 'Tentou aplicar cupom inativo', { codigo: cupom.codigo });
         return res.status(400).json({ error: 'Cupom inativo' });
       }
 
       if (agora < dataInicio) {
+        await log('cupom_invalido', req, 'Tentou aplicar cupom antes do início', { codigo: cupom.codigo });
         return res.status(400).json({ error: 'Cupom ainda não está disponível' });
       }
 
       if (agora > dataFim) {
+        await log('cupom_invalido', req, 'Tentou aplicar cupom expirado', { codigo: cupom.codigo });
         return res.status(400).json({ error: 'Cupom expirado' });
       }
 
       if (cupom.quantidade_maxima !== null && cupom.quantidade_usada >= cupom.quantidade_maxima) {
+        await log('cupom_invalido', req, 'Tentou aplicar cupom esgotado', { codigo: cupom.codigo });
         return res.status(400).json({ error: 'Cupom esgotado' });
       }
 
@@ -264,6 +278,8 @@ class CarrinhoController {
           [cupom.codigo, desconto, item.id]
         );
       }
+
+      await log('cupom_aplicado', req, 'Aplicou cupom ao carrinho', { codigo: cupom.codigo, desconto, valorTotal });
 
       res.json({
         message: 'Cupom aplicado com sucesso',
@@ -290,6 +306,8 @@ class CarrinhoController {
         'UPDATE carrinho_usuarios SET cupom_codigo = NULL, cupom_desconto = 0 WHERE usuario_id = ?',
         [usuarioId]
       );
+
+      await log('cupom_removido', req, 'Removeu cupom do carrinho');
 
       res.json({ message: 'Cupom removido com sucesso' });
     } catch (error) {
