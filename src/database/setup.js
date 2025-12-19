@@ -106,6 +106,7 @@ async function setupDatabase() {
                 init_point VARCHAR(255),
                 cupom_id VARCHAR(36) NULL,
                 valor_desconto DECIMAL(10, 2) DEFAULT 0,
+                ip_usuario VARCHAR(45) NULL,
                 atualizado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                 FOREIGN KEY (usuario_id) REFERENCES usuarios(id) ON DELETE CASCADE,
                 FOREIGN KEY (plano_id) REFERENCES planos(id) ON DELETE RESTRICT,
@@ -113,6 +114,16 @@ async function setupDatabase() {
                 FOREIGN KEY (cupom_id) REFERENCES cupons(id) ON DELETE SET NULL
             )
         `);
+
+    // Adicionar coluna ip_usuario se não existir (para bancos existentes)
+    try {
+      await pool.execute(`
+        ALTER TABLE pagamentos_assinatura 
+        ADD COLUMN IF NOT EXISTS ip_usuario VARCHAR(45) NULL
+      `);
+    } catch (err) {
+      // Coluna já existe ou erro de sintaxe MySQL, ignorar
+    }
 
     await pool.execute(`
             CREATE TABLE IF NOT EXISTS usuario_empresas (

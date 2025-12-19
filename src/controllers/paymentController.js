@@ -155,7 +155,7 @@ class PaymentController {
       }
 
       const [pagamentoRows] = await connection.execute(
-        "SELECT usuario_id, plano_id, cupom_id, valor FROM pagamentos_assinatura WHERE id = ?",
+        "SELECT usuario_id, plano_id, cupom_id, valor, ip_usuario FROM pagamentos_assinatura WHERE id = ?",
         [nossoPagamentoId]
       );
 
@@ -164,7 +164,7 @@ class PaymentController {
         return res.status(404).send("Pagamento não encontrado.");
       }
 
-      const { usuario_id, plano_id, cupom_id, valor } = pagamentoRows[0];
+      const { usuario_id, plano_id, cupom_id, valor, ip_usuario } = pagamentoRows[0];
 
       if (novoStatusPagamento === "aprovado") {
         const [planoRows] = await connection.execute(
@@ -229,7 +229,17 @@ class PaymentController {
         detalhesLog.assinatura_id = assinaturaId;
         detalhesLog.data_vencimento = new Date(Date.now() + duracao_dias * 24 * 60 * 60 * 1000).toISOString();
         
-        await log('pagamento', req, 'Pagamento aprovado', detalhesLog, { id: usuario_id, email: usuarioRows[0]?.email, nome: usuarioRows[0]?.nome });
+        // Requisição fictícia com IP do usuário original
+        const webhookReq = {
+          ip: ip_usuario, // IP do usuário que criou o pagamento
+          user: null
+        };
+        
+        detalhesLog.origem = 'webhook_mercadopago';
+        detalhesLog.ip_usuario = ip_usuario; // IP do usuário
+        detalhesLog.ip_mercadopago = req.ip; // IP do servidor do Mercado Pago
+        
+        await log('pagamento', webhookReq, 'Pagamento aprovado via webhook', detalhesLog, { id: usuario_id, email: usuarioRows[0]?.email, nome: usuarioRows[0]?.nome });
 
         if (cupom_id) {
           await connection.execute(
@@ -318,7 +328,13 @@ class PaymentController {
             
             // Log de pagamento expirado
             if (pagDetalhes.length > 0) {
-              await log('pagamento', req, 'Pagamento expirado por tempo limite', {
+              // Requisição fictícia para não registrar IP do frontend
+              const expiracaoReq = {
+                ip: null,
+                user: null
+              };
+              
+              await log('pagamento', expiracaoReq, 'Pagamento expirado por tempo limite', {
                 pagamento_id: id,
                 status_anterior: 'pendente',
                 status_novo: 'expirado',
@@ -331,7 +347,8 @@ class PaymentController {
                 },
                 assinatura_id: payment.assinatura_id || null,
                 assinatura_inativada: !!payment.assinatura_id,
-                expirado_em: new Date().toISOString()
+                expirado_em: new Date().toISOString(),
+                origem: 'verificacao_automatica'
               }, { id: pagDetalhes[0].usuario_id, email: pagDetalhes[0].email, nome: pagDetalhes[0].usuario_nome });
             }
             
@@ -611,8 +628,8 @@ class PaymentController {
       await connection.execute(
         `INSERT INTO pagamentos_assinatura (
           id, usuario_id, plano_id, valor, metodo_pagamento, status_pagamento,
-          data_expiracao, qr_code, qr_code_text, cupom_id, valor_desconto
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          data_expiracao, qr_code, qr_code_text, cupom_id, valor_desconto, ip_usuario
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           paymentId,
           usuarioId,
@@ -624,7 +641,8 @@ class PaymentController {
           qrCodeBase64,
           qrCodeText,
           cupomId,
-          valorDesconto
+          valorDesconto,
+          req.ip || null
         ]
       );
 
