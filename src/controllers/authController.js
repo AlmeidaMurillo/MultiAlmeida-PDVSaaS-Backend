@@ -106,6 +106,13 @@ const clearRefreshTokenCookie = (req, res) => {
   const isLocalhost = origin.includes('localhost') || origin.includes('127.0.0.1');
   const isProduction = NODE_ENV === 'production';
   
+  let isCrossSite = false;
+  try {
+    const originHost = origin ? new URL(origin).host : '';
+    const backendHost = req.get('host');
+    isCrossSite = !!origin && originHost && backendHost && originHost !== backendHost;
+  } catch {}
+  
   const options = {
     httpOnly: true,
     secure: isProduction,
@@ -196,12 +203,14 @@ class AuthController {
         [usuario.id]
       );
       
+      const sessionId = uuidv4();
+      
       await pool.execute(
         `INSERT INTO sessoes_usuarios 
          (id, usuario_id, hash_token, expira_em, info_dispositivo, info_navegador, endereco_ip, papel) 
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         [
-          uuidv4(),
+          sessionId,
           usuario.id,
           refreshTokenHash,
           refreshTokenExpires,
@@ -225,7 +234,7 @@ class AuthController {
       // Registrar log de login
       await logLogin(req, {
         ...usuario,
-        sessao_id: validSession?.id,
+        sessao_id: sessionId,
         token_expira_em: refreshTokenExpires.toISOString(),
         dispositivo: req.headers['user-agent'] || 'unknown',
         endereco_ip: req.ip
