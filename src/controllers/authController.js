@@ -37,12 +37,6 @@ const ACCESS_TOKEN_EXPIRES_IN = process.env.ACCESS_TOKEN_EXPIRES_IN || '12h'; //
 const REFRESH_TOKEN_EXPIRES_IN_DAYS = parseInt(process.env.REFRESH_TOKEN_EXPIRES_IN_DAYS || '30', 10); // 30 dias padrão
 const NODE_ENV = process.env.NODE_ENV;
 
-console.log('🔧 Configuração de tokens:', {
-  accessTokenExpires: ACCESS_TOKEN_EXPIRES_IN,
-  refreshTokenDays: REFRESH_TOKEN_EXPIRES_IN_DAYS,
-  nodeEnv: NODE_ENV
-});
-
 if (!ACCESS_TOKEN_SECRET) {
   throw new Error('ACCESS_TOKEN_SECRET não definido nas variáveis de ambiente');
 }
@@ -88,17 +82,7 @@ const setRefreshTokenCookie = (req, res, token) => {
     options.secure = true;
   }
   
-  console.log('🍪 Definindo cookie refreshToken:', {
-    origem: origin,
-    isLocalhost,
-    isProduction,
-    options,
-    cookieValue: token.substring(0, 10) + '...'
-  });
-  
   res.cookie('refreshToken', token, options);
-  
-  console.log('🍪 Cookie set-cookie header:', res.getHeader('set-cookie'));
 };
 
 const clearRefreshTokenCookie = (req, res) => {
@@ -124,8 +108,6 @@ const clearRefreshTokenCookie = (req, res) => {
     options.sameSite = 'none';
     options.secure = true;
   }
-  
-  console.log('🧹 Limpando cookie refreshToken:', { origem: origin, options });
   
   res.clearCookie('refreshToken', options);
   
@@ -172,8 +154,6 @@ class AuthController {
       const senhaCorreta = await bcrypt.compare(senha, hashToCompare);
       
       if (userRows.length === 0 || !senhaCorreta) {
-        logLoginAttempt(false, email, req.ip, req.headers['user-agent']);
-        
         // Registrar tentativa de login falhada
         await logLogin(req, { 
           email,
@@ -188,8 +168,6 @@ class AuthController {
       }
 
       const usuario = userRows[0];
-      
-      logLoginAttempt(true, email, req.ip, req.headers['user-agent'], usuario.id);
 
       const accessToken = await generateAccessToken(usuario);
       const refreshToken = crypto.randomBytes(40).toString('hex');
@@ -222,14 +200,6 @@ class AuthController {
       );
 
       setRefreshTokenCookie(req, res, refreshToken);
-      
-      console.log('✅ Login bem-sucedido:', {
-        userId: usuario.id,
-        email: usuario.email,
-        papel: usuario.papel,
-        tokenExpires: refreshTokenExpires,
-        ip: req.ip
-      });
 
       // Registrar log de login
       await logLogin(req, {
@@ -272,7 +242,6 @@ class AuthController {
       
       const [userRows] = await pool.execute('SELECT id, nome, email, papel FROM usuarios WHERE id = ?', [validSession.usuario_id]);
       if (userRows.length === 0) {
-        console.log('❌ Usuário não encontrado');
         return res.status(404).json({ error: 'Usuário não encontrado.' });
       }
       const accessToken = await generateAccessToken(userRows[0]);
@@ -305,15 +274,6 @@ class AuthController {
           
           await pool.execute('UPDATE sessoes_usuarios SET esta_ativo = FALSE WHERE id = ?', [validSession.id]);
           
-          logSecurityEvent(
-            SecurityLevel.INFO,
-            SecurityEvent.LOGOUT,
-            {
-              userId,
-              ip: req.ip
-            }
-          );
-          
           // Registrar log de logout
           await logLogout(req, { 
             id: userId, 
@@ -344,27 +304,12 @@ class AuthController {
   async hasRefresh(req, res) {
     const { refreshToken } = req.cookies;
     
-    console.log('🔍 Verificando has-refresh:', {
-      temCookie: !!refreshToken,
-      cookies: Object.keys(req.cookies),
-      cookieHeader: req.headers.cookie,
-      origem: req.headers.origin,
-      referer: req.headers.referer,
-      withCredentials: req.headers['access-control-request-credentials'],
-      userAgent: req.headers['user-agent']?.substring(0, 50)
-    });
-    
     if (!refreshToken) {
-      console.log('⚠️ Nenhum refreshToken encontrado nos cookies');
       return res.json({ hasRefresh: false, sessionActive: false });
     }
 
     try {
       const validSession = await findSessionByToken(refreshToken);
-      console.log('✅ Sessão válida:', {
-        encontrada: !!validSession,
-        sessionId: validSession?.id
-      });
       
       if (!validSession) {
         return res.json({ hasRefresh: false, sessionActive: false });
@@ -376,11 +321,6 @@ class AuthController {
       );
       
       const isActive = sessionRows.length > 0 && sessionRows[0].esta_ativo === 1;
-      
-      console.log('✅ Status da sessão:', {
-        sessionId: validSession.id,
-        estaAtivo: isActive
-      });
       
       return res.json({ 
         hasRefresh: isActive,
@@ -476,16 +416,6 @@ class AuthController {
       );
 
       if (Array.isArray(existingUsers) && existingUsers.length > 0) {
-        logSecurityEvent(
-          SecurityLevel.WARNING,
-          SecurityEvent.SUSPICIOUS_ACTIVITY,
-          {
-            event: 'Tentativa de registro com email existente',
-            email,
-            ip: req.ip
-          }
-        );
-        
         await new Promise(resolve => setTimeout(resolve, 500));
         
         return res.status(409).json({ error: "Email já cadastrado" });
@@ -528,17 +458,6 @@ class AuthController {
 
       setRefreshTokenCookie(req, res, refreshToken);
       
-      logSecurityEvent(
-        SecurityLevel.INFO,
-        SecurityEvent.LOGIN_SUCCESS,
-        {
-          event: 'Nova conta criada',
-          userId: usuario.id,
-          email: usuario.email,
-          ip: req.ip
-        }
-      );
-      
       // Registrar log de registro
       await logRegistro(req, {
         ...usuario,
@@ -557,15 +476,6 @@ class AuthController {
 
     } catch (error) {
       console.error("Erro ao criar conta:", error);
-      logSecurityEvent(
-        SecurityLevel.CRITICAL,
-        SecurityEvent.SUSPICIOUS_ACTIVITY,
-        {
-          event: 'Erro ao criar conta',
-          error: error.message,
-          ip: req.ip
-        }
-      );
       return res.status(500).json({ error: "Erro interno do servidor" });
     }
   }

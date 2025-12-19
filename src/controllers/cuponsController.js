@@ -14,15 +14,6 @@ class CuponsController {
       const cuponsPercentuais = cupons.filter(c => c.tipo === 'percentual').length;
       const cuponsFixos = cupons.filter(c => c.tipo === 'fixo').length;
 
-      await log('admin_cupom', req, 'Listou cupons', { 
-        total: cupons.length,
-        cupons_ativos: cuponsAtivos,
-        cupons_inativos: cuponsInativos,
-        cupons_percentuais: cuponsPercentuais,
-        cupons_fixos: cuponsFixos,
-        listado_em: new Date().toISOString()
-      });
-
       return res.json(cupons);
     } catch (error) {
       console.error('Erro ao listar cupons:', error);
@@ -203,18 +194,70 @@ class CuponsController {
         [id]
       );
 
+      // Preparar dados antigos e novos para comparação
+      const cupomAntigo = cupom[0];
+      const cupomNovo = cupomAtualizado[0];
+
+      // Identificar campos que realmente mudaram
+      const camposAlterados = [];
+      const alteracoes = {};
+
+      if (codigo !== undefined && cupomAntigo.codigo !== cupomNovo.codigo) {
+        camposAlterados.push('codigo');
+        alteracoes.codigo = { de: cupomAntigo.codigo, para: cupomNovo.codigo };
+      }
+      if (tipo !== undefined && cupomAntigo.tipo !== cupomNovo.tipo) {
+        camposAlterados.push('tipo');
+        alteracoes.tipo = { de: cupomAntigo.tipo, para: cupomNovo.tipo };
+      }
+      if (valor !== undefined && parseFloat(cupomAntigo.valor) !== parseFloat(cupomNovo.valor)) {
+        camposAlterados.push('valor');
+        alteracoes.valor = { de: parseFloat(cupomAntigo.valor), para: parseFloat(cupomNovo.valor) };
+      }
+      if (quantidade_maxima !== undefined && cupomAntigo.quantidade_maxima !== cupomNovo.quantidade_maxima) {
+        camposAlterados.push('quantidade_maxima');
+        alteracoes.quantidade_maxima = { 
+          de: cupomAntigo.quantidade_maxima || 'Ilimitado', 
+          para: cupomNovo.quantidade_maxima || 'Ilimitado' 
+        };
+      }
+      if (data_inicio !== undefined && cupomAntigo.data_inicio?.toISOString() !== new Date(cupomNovo.data_inicio).toISOString()) {
+        camposAlterados.push('data_inicio');
+        alteracoes.data_inicio = { de: cupomAntigo.data_inicio, para: cupomNovo.data_inicio };
+      }
+      if (data_fim !== undefined && cupomAntigo.data_fim?.toISOString() !== new Date(cupomNovo.data_fim).toISOString()) {
+        camposAlterados.push('data_fim');
+        alteracoes.data_fim = { de: cupomAntigo.data_fim, para: cupomNovo.data_fim };
+      }
+      if (ativo !== undefined && cupomAntigo.ativo !== cupomNovo.ativo) {
+        camposAlterados.push('ativo');
+        alteracoes.ativo = { de: cupomAntigo.ativo ? 'Ativo' : 'Inativo', para: cupomNovo.ativo ? 'Ativo' : 'Inativo' };
+      }
+
       await log('admin_cupom', req, 'Atualizou cupom', { 
         cupom_id: id,
-        codigo: cupomAtualizado[0].codigo,
-        tipo: cupomAtualizado[0].tipo,
-        valor: cupomAtualizado[0].valor,
-        quantidade_maxima: cupomAtualizado[0].quantidade_maxima || 'Ilimitado',
-        quantidade_usada: cupomAtualizado[0].quantidade_usada,
-        data_inicio: cupomAtualizado[0].data_inicio,
-        data_fim: cupomAtualizado[0].data_fim,
-        ativo: cupomAtualizado[0].ativo,
-        campos_alterados: campos.length,
-        campos_modificados: campos,
+        codigo_cupom: cupomNovo.codigo,
+        dados_antigos: {
+          codigo: cupomAntigo.codigo,
+          tipo: cupomAntigo.tipo,
+          valor: parseFloat(cupomAntigo.valor),
+          quantidade_maxima: cupomAntigo.quantidade_maxima || 'Ilimitado',
+          data_inicio: cupomAntigo.data_inicio,
+          data_fim: cupomAntigo.data_fim,
+          ativo: cupomAntigo.ativo
+        },
+        dados_novos: {
+          codigo: cupomNovo.codigo,
+          tipo: cupomNovo.tipo,
+          valor: parseFloat(cupomNovo.valor),
+          quantidade_maxima: cupomNovo.quantidade_maxima || 'Ilimitado',
+          data_inicio: cupomNovo.data_inicio,
+          data_fim: cupomNovo.data_fim,
+          ativo: cupomNovo.ativo
+        },
+        campos_alterados: camposAlterados,
+        alteracoes: alteracoes,
+        total_campos_alterados: camposAlterados.length,
         atualizado_em: new Date().toISOString()
       });
 
@@ -242,10 +285,17 @@ class CuponsController {
 
       await log('admin_cupom', req, 'Deletou cupom', { 
         cupom_id: id,
-        codigo: cupom[0].codigo,
-        tipo: cupom[0].tipo,
-        valor: cupom[0].valor,
-        quantidade_usada: cupom[0].quantidade_usada
+        dados_deletados: {
+          codigo: cupom[0].codigo,
+          tipo: cupom[0].tipo,
+          valor: parseFloat(cupom[0].valor),
+          quantidade_maxima: cupom[0].quantidade_maxima || 'Ilimitado',
+          quantidade_usada: cupom[0].quantidade_usada,
+          data_inicio: cupom[0].data_inicio,
+          data_fim: cupom[0].data_fim,
+          ativo: cupom[0].ativo ? 'Ativo' : 'Inativo'
+        },
+        deletado_em: new Date().toISOString()
       });
 
       return res.json({ message: 'Cupom deletado com sucesso' });

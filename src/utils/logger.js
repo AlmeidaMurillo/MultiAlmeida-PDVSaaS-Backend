@@ -39,8 +39,8 @@ export async function log(tipo, req, acao, detalhes = {}, usuario = null) {
       ]
     );
 
-    // Log no console em desenvolvimento
-    if (process.env.NODE_ENV !== 'production') {
+    // Log no console apenas para erros críticos em desenvolvimento
+    if (process.env.NODE_ENV !== 'production' && (tipo === 'erro' || tipo === 'ataque_detectado')) {
       console.log(`📝 [${tipo.toUpperCase()}] ${acao}`, {
         usuario: email || usuarioId || 'anônimo',
         nome: nome || 'N/A',

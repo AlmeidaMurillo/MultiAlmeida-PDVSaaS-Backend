@@ -126,7 +126,9 @@ app.use((req, res, next) => {
   generalLimiter(req, res, next);
 });
 
-app.use(securityLoggerMiddleware);
+// Middleware desabilitado para evitar logs duplicados
+// O sistema de logs principal (logger.js) já registra todas as ações no banco de dados
+// app.use(securityLoggerMiddleware);
 
 app.use(attackDetectionMiddleware);
 

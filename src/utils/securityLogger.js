@@ -1,15 +1,5 @@
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-const logsDir = path.join(__dirname, '../../logs');
-
-if (!fs.existsSync(logsDir)) {
-  fs.mkdirSync(logsDir, { recursive: true });
-}
+// Módulo de segurança - SEM criação de arquivos .log
+// Todas as logs são registradas apenas no banco de dados MySQL via logger.js
 
 export const SecurityLevel = {
   INFO: 'INFO',
@@ -34,127 +24,21 @@ export const SecurityEvent = {
   PERMISSION_DENIED: 'PERMISSION_DENIED'
 };
 
+// Função desabilitada - não cria arquivos .log
 export const logSecurityEvent = (level, event, details = {}) => {
-  const timestamp = new Date().toISOString();
-  const logEntry = {
-    timestamp,
-    level,
-    event,
-    ...details
-  };
-
-  const logFile = path.join(logsDir, `security-${new Date().toISOString().split('T')[0]}.log`);
-  const logLine = JSON.stringify(logEntry) + '\n';
-  
-  fs.appendFile(logFile, logLine, (err) => {
-    if (err) {
-      console.error('Erro ao escrever log de segurança:', err);
-    }
-  });
-
-  const colors = {
-    INFO: '\x1b[36m',      // Cyan
-    WARNING: '\x1b[33m',    // Yellow
-    CRITICAL: '\x1b[31m',   // Red
-    ATTACK: '\x1b[35m'      // Magenta
-  };
-  
-  const reset = '\x1b[0m';
-  const color = colors[level] || colors.INFO;
-  
-  console.log(`${color}[${level}] ${event}${reset}`, details);
+  // Não faz nada - logs são salvos apenas no banco de dados via logger.js
 };
 
+// Middleware desabilitado - não cria logs duplicados
 export const securityLoggerMiddleware = (req, res, next) => {
-  const start = Date.now();
-  
-  const originalSend = res.send;
-  res.send = function(data) {
-    const duration = Date.now() - start;
-    
-    if (res.statusCode === 401 || res.statusCode === 403) {
-      logSecurityEvent(
-        SecurityLevel.WARNING,
-        res.statusCode === 401 ? SecurityEvent.UNAUTHORIZED_ACCESS : SecurityEvent.PERMISSION_DENIED,
-        {
-          method: req.method,
-          path: req.path,
-          ip: req.ip,
-          userAgent: req.headers['user-agent'],
-          userId: req.user?.id,
-          statusCode: res.statusCode,
-          duration
-        }
-      );
-    }
-    
-    if (res.statusCode === 429) {
-      logSecurityEvent(
-        SecurityLevel.WARNING,
-        SecurityEvent.RATE_LIMIT,
-        {
-          method: req.method,
-          path: req.path,
-          ip: req.ip,
-          userAgent: req.headers['user-agent'],
-          userId: req.user?.id
-        }
-      );
-    }
-    
-    return originalSend.call(this, data);
-  };
-  
   next();
 };
 
-export const logLoginAttempt = (success, email, ip, userAgent, userId = null) => {
-  logSecurityEvent(
-    success ? SecurityLevel.INFO : SecurityLevel.WARNING,
-    success ? SecurityEvent.LOGIN_SUCCESS : SecurityEvent.LOGIN_FAILED,
-    {
-      email,
-      ip,
-      userAgent,
-      userId
-    }
-  );
-};
-
-export const logPasswordChange = (userId, ip) => {
-  logSecurityEvent(
-    SecurityLevel.INFO,
-    SecurityEvent.PASSWORD_CHANGE,
-    {
-      userId,
-      ip
-    }
-  );
-};
-
-export const logSqlInjectionAttempt = (input, ip, path) => {
-  logSecurityEvent(
-    SecurityLevel.ATTACK,
-    SecurityEvent.SQL_INJECTION_ATTEMPT,
-    {
-      input: input.substring(0, 100),
-      ip,
-      path
-    }
-  );
-};
-
-export const logXssAttempt = (input, ip, path) => {
-  logSecurityEvent(
-    SecurityLevel.ATTACK,
-    SecurityEvent.XSS_ATTEMPT,
-    {
-      input: input.substring(0, 100),
-      ip,
-      path
-    }
-  );
-};
+// Funções desabilitadas - logs salvos apenas no banco via logger.js
+export const logLoginAttempt = (success, email, ip, userAgent, userId = null) => {};
+export const logPasswordChange = (userId, ip) => {};
+export const logSqlInjectionAttempt = (input, ip, path) => {};
+export const logXssAttempt = (input, ip, path) => {};
 
 export const detectSuspiciousPatterns = (str) => {
   if (typeof str !== 'string') return null;

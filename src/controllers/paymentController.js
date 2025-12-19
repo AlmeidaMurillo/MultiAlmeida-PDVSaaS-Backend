@@ -156,14 +156,22 @@ class PaymentController {
         
         let detalhesLog = {
           pagamento_id: nossoPagamentoId,
-          mercadopago_id: payment.id,
-          valor_pago: valor,
-          plano: planoRows[0]?.nome || 'N/A',
-          periodo: planoRows[0]?.periodo || 'N/A',
-          duracao_dias: planoRows[0]?.duracao_dias || 0,
+          mercadopago_payment_id: payment.id,
+          status_pagamento: 'aprovado',
+          valor_pago: parseFloat(valor),
+          plano: {
+            nome: planoRows[0]?.nome || 'N/A',
+            periodo: planoRows[0]?.periodo || 'N/A',
+            duracao_dias: planoRows[0]?.duracao_dias || 0
+          },
           metodo_pagamento: payment.payment_method_id || 'N/A',
-          usuario_nome: usuarioRows[0]?.nome || 'N/A',
-          usuario_email: usuarioRows[0]?.email || 'N/A'
+          usuario: {
+            id: usuario_id,
+            nome: usuarioRows[0]?.nome || 'N/A',
+            email: usuarioRows[0]?.email || 'N/A'
+          },
+          assinatura_criada: true,
+          assinatura_id: null
         };
         
         if (cupom_id) {
@@ -172,19 +180,14 @@ class PaymentController {
             [cupom_id]
           );
           if (cupomRows.length > 0) {
-            detalhesLog.cupom_codigo = cupomRows[0].codigo;
-            detalhesLog.cupom_tipo = cupomRows[0].tipo;
-            detalhesLog.cupom_valor = cupomRows[0].valor;
+            detalhesLog.cupom = {
+              codigo: cupomRows[0].codigo,
+              tipo: cupomRows[0].tipo,
+              valor: parseFloat(cupomRows[0].valor)
+            };
           }
         }
         
-        await log('pagamento', req, 'Pagamento aprovado', detalhesLog, { id: usuario_id, email: usuarioRows[0]?.email, nome: usuarioRows[0]?.nome });
-
-        if (!planoRows.length) {
-          await connection.rollback();
-          return res.status(404).send("Plano não encontrado.");
-        }
-
         const { duracao_dias } = planoRows[0];
 
         const assinaturaId = uuidv4();
@@ -198,6 +201,12 @@ class PaymentController {
           "UPDATE pagamentos_assinatura SET assinatura_id = ? WHERE id = ?",
           [assinaturaId, nossoPagamentoId]
         );
+        
+        // Adicionar ID da assinatura ao log
+        detalhesLog.assinatura_id = assinaturaId;
+        detalhesLog.data_vencimento = new Date(Date.now() + duracao_dias * 24 * 60 * 60 * 1000).toISOString();
+        
+        await log('pagamento', req, 'Pagamento aprovado', detalhesLog, { id: usuario_id, email: usuarioRows[0]?.email, nome: usuarioRows[0]?.nome });
 
         if (cupom_id) {
           await connection.execute(
@@ -276,10 +285,18 @@ class PaymentController {
             if (pagDetalhes.length > 0) {
               await log('pagamento', req, 'Pagamento expirado por tempo limite', {
                 pagamento_id: id,
-                valor: pagDetalhes[0].valor,
-                plano: pagDetalhes[0].plano_nome,
-                usuario_nome: pagDetalhes[0].usuario_nome,
-                usuario_email: pagDetalhes[0].email
+                status_anterior: 'pendente',
+                status_novo: 'expirado',
+                valor: parseFloat(pagDetalhes[0].valor),
+                plano_nome: pagDetalhes[0].plano_nome,
+                usuario: {
+                  id: pagDetalhes[0].usuario_id,
+                  nome: pagDetalhes[0].usuario_nome,
+                  email: pagDetalhes[0].email
+                },
+                assinatura_id: payment.assinatura_id || null,
+                assinatura_inativada: !!payment.assinatura_id,
+                expirado_em: new Date().toISOString()
               }, { id: pagDetalhes[0].usuario_id, email: pagDetalhes[0].email, nome: pagDetalhes[0].usuario_nome });
             }
             
@@ -447,21 +464,17 @@ class PaymentController {
     await connection.beginTransaction();
 
     try {
-      console.log('🛒 Iniciando pagamento para usuário:', usuarioId);
-      
       const [cartItems] = await connection.execute(
         "SELECT plano_id, periodo, cupom_codigo, cupom_desconto FROM carrinho_usuarios WHERE usuario_id = ?",
         [usuarioId]
       );
 
       if (cartItems.length === 0) {
-        console.log('⚠️ Carrinho vazio para usuário:', usuarioId);
         await connection.rollback();
         return res.status(404).json({ message: "Carrinho vazio" });
       }
 
       const { plano_id: planId, periodo, cupom_codigo, cupom_desconto } = cartItems[0];
-      console.log('📋 Dados do carrinho:', { planId, periodo, cupom_codigo, cupom_desconto });
 
       if (!periodo || (periodo !== 'mensal' && periodo !== 'anual')) {
         console.error('❌ Período inválido:', periodo);
@@ -485,7 +498,6 @@ class PaymentController {
       }
 
       const plano = planRows[0];
-      console.log('✅ Plano encontrado:', plano.nome, '-', plano.periodo);
 
       let preco = parseFloat(plano.preco.toString().replace(",", "."));
       
@@ -501,11 +513,8 @@ class PaymentController {
       let cupomId = null;
       let valorDesconto = cupom_desconto ? parseFloat(cupom_desconto) : 0;
       let cupomInfo = null;
-      
-      console.log('💰 Preço do plano:', preco);
 
       if (cupom_codigo && valorDesconto > 0) {
-        console.log('🎫 Aplicando cupom:', cupom_codigo);
         const [cupons] = await connection.execute(
           'SELECT * FROM cupons WHERE codigo = ?',
           [cupom_codigo]
@@ -516,7 +525,6 @@ class PaymentController {
           cupomId = cupom.id;
           
           preco = Math.max(0, preco - valorDesconto);
-          console.log('💰 Desconto aplicado:', valorDesconto, '| Preço final:', preco);
           
           cupomInfo = {
             codigo: cupom.codigo,
@@ -543,14 +551,6 @@ class PaymentController {
       const PAYMENT_EXPIRATION_MINUTES = parseInt(process.env.PAYMENT_EXPIRATION_MINUTES || '2', 10);
       const expirationTime = new Date(Date.now() + PAYMENT_EXPIRATION_MINUTES * 60 * 1000);
 
-      console.log('💳 Criando pagamento no Mercado Pago:', {
-        paymentId,
-        valor: preco,
-        plano: plano.nome,
-        periodo,
-        email: req.user.email
-      });
-
       const paymentClient = new Payment(client);
 
       const paymentData = {
@@ -566,13 +566,7 @@ class PaymentController {
         },
       };
 
-      console.log('📤 Dados do pagamento enviados ao MP:', {
-        transaction_amount: paymentData.body.transaction_amount,
-        tipo: typeof paymentData.body.transaction_amount
-      });
-
       const response = await paymentClient.create(paymentData);
-      console.log('✅ Pagamento criado no Mercado Pago:', response.id);
 
       const qrCodeBase64 =
         response.point_of_interaction?.transaction_data?.qr_code_base64 || "";
@@ -603,13 +597,26 @@ class PaymentController {
 
       // Registrar log de pagamento criado
       await logPagamento(req, req.user, 'Pagamento PIX criado', {
-        paymentId,
-        plano: plano.nome,
+        pagamento_id: paymentId,
+        plano_nome: plano.nome,
+        plano_id: planId,
         periodo,
-        valor: preco,
-        valorOriginal: precoOriginal,
-        desconto: valorDesconto,
-        cupom: cupomInfo,
+        valor_final: preco,
+        valor_original: precoOriginal,
+        desconto_aplicado: valorDesconto,
+        cupom_usado: cupomInfo ? {
+          codigo: cupomInfo.codigo,
+          tipo: cupomInfo.tipo,
+          valor: cupomInfo.valor,
+          desconto: cupomInfo.desconto
+        } : null,
+        metodo_pagamento: 'PIX',
+        expira_em: expirationTime,
+        usuario: {
+          nome: req.user.nome,
+          email: req.user.email
+        },
+        criado_em: new Date().toISOString()
       });
 
       return res.status(200).json({

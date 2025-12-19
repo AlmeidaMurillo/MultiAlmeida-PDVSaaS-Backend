@@ -4,14 +4,6 @@ import { logRateLimit } from './logger.js';
  * Registra quando um usuário atinge o rate limit (agora usando MySQL)
  */
 export const logRateLimitHit = async (req, limiterName) => {
-  // Console log para desenvolvimento
-  console.warn('⚠️ RATE LIMIT ATINGIDO:', {
-    limiter: limiterName,
-    user: req.user?.email || req.user?.id || 'anônimo',
-    ip: req.ip || req.connection.remoteAddress,
-    path: `${req.method} ${req.path}`,
-  });
-
   // Salvar no banco de dados
   await logRateLimit(req, limiterName);
 };
