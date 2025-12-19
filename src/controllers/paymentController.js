@@ -2,7 +2,7 @@ import { MercadoPagoConfig, Payment } from "mercadopago";
 import dotenv from "dotenv";
 import { v4 as uuidv4 } from "uuid";
 import pool from "../db.js";
-import { logPagamento, logCompra } from "../utils/logger.js";
+import { log, logPagamento, logCompra } from "../utils/logger.js";
 
 dotenv.config();
 
@@ -64,6 +64,12 @@ class PaymentController {
 
   
   async handleWebhook(req, res) {
+    console.log('🔔 Webhook recebido do Mercado Pago:', {
+      headers: req.headers,
+      body: req.body,
+      query: req.query
+    });
+
     const xSignature = req.headers['x-signature'];
     const xRequestId = req.headers['x-request-id'];
     
@@ -81,14 +87,17 @@ class PaymentController {
     if (req.body && req.body.action && req.body.action.startsWith("payment.")) {
       paymentId = req.body.data?.id;
       notificationType = req.body.type;
+      console.log('📦 Webhook via body:', { paymentId, notificationType });
     } else if (req.query && req.query["data.id"]) {
       notificationType = req.query.type;
       if (notificationType === "payment") {
         paymentId = req.query["data.id"];
       }
+      console.log('📦 Webhook via query:', { paymentId, notificationType });
     }
 
     if (notificationType !== "payment" || !paymentId) {
+      console.log('⏭️ Evento ignorado:', { notificationType, paymentId });
       return res.status(200).send("Evento ignorado.");
     }
 
@@ -99,8 +108,16 @@ class PaymentController {
       const paymentClient = new Payment(client);
       const payment = await paymentClient.get({ id: paymentId });
 
+      console.log('💳 Pagamento do Mercado Pago:', {
+        id: payment.id,
+        status: payment.status,
+        external_reference: payment.external_reference,
+        payment_method_id: payment.payment_method_id
+      });
+
       if (!payment || !payment.external_reference) {
         await connection.rollback();
+        console.error('❌ Pagamento sem referência externa');
         return res
           .status(404)
           .send("Pagamento não encontrado ou sem referência externa.");
@@ -115,6 +132,12 @@ class PaymentController {
           : payment.status === "cancelled"
           ? "cancelado"
           : "pendente";
+
+      console.log('🔄 Atualizando status:', { 
+        pagamentoId: nossoPagamentoId, 
+        statusAnterior: 'pendente', 
+        novoStatus: novoStatusPagamento 
+      });
 
       const updateQuery = novoStatusPagamento === "aprovado"
         ? "UPDATE pagamentos_assinatura SET status_pagamento = ?, data_pagamento = NOW(), transaction_id = ? WHERE id = ?"
@@ -217,13 +240,25 @@ class PaymentController {
 
         await connection.execute("DELETE FROM carrinho_usuarios WHERE usuario_id = ?", [usuario_id]);
 
+        console.log('✅ Pagamento aprovado com sucesso:', {
+          pagamentoId: nossoPagamentoId,
+          assinaturaId,
+          usuarioId: usuario_id,
+          valorPago: parseFloat(valor)
+        });
+
       } else if (
         novoStatusPagamento === "reprovado" ||
         novoStatusPagamento === "cancelado"
       ) {
+        console.log('❌ Pagamento reprovado/cancelado:', {
+          pagamentoId: nossoPagamentoId,
+          status: novoStatusPagamento
+        });
       }
 
       await connection.commit();
+      console.log('✅ Webhook processado com sucesso:', { paymentId });
       return res.status(200).send("Webhook processado com sucesso.");
     } catch (error) {
       await connection.rollback();
