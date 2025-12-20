@@ -93,11 +93,6 @@ export async function requireAdmin(req, res, next) {
   }
   return next();
 }
-    });
-    return res.status(403).json({ error: "Acesso negado" });
-  }
-  return next();
-}
 
 export async function requireSubscription(req, res, next) {
   if (!req.user) {
