@@ -49,8 +49,8 @@ export const getLogs = async (req, res) => {
     }
 
     if (ip) {
-      query += ' AND ip = ?';
-      params.push(ip);
+      query += ' AND ip LIKE ?';
+      params.push(`%${ip}%`);
     }
 
     if (data_inicio) {
