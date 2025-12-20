@@ -77,11 +77,13 @@ export const getLogs = async (req, res) => {
     if (data_inicio) {
       query += ' AND criado_em >= ?';
       params.push(data_inicio);
+      console.log('📅 Filtrando data_inicio:', data_inicio);
     }
 
     if (data_fim) {
       query += ' AND criado_em <= ?';
       params.push(data_fim);
+      console.log('📅 Filtrando data_fim:', data_fim);
     }
 
     // Contar total
