@@ -134,6 +134,13 @@ app.use(attackDetectionMiddleware);
 
 app.use(sanitizeMiddleware);
 
+// Servir teste de ataque em modo desenvolvimento
+if (process.env.NODE_ENV === 'development') {
+  app.get('/test-attack', (req, res) => {
+    res.sendFile('test-attack.html', { root: process.cwd() });
+  });
+}
+
 const cache = apicache.middleware;
 app.use('/api/planos', cache('60 seconds'));
 
