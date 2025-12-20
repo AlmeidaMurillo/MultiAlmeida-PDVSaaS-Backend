@@ -101,6 +101,13 @@ export const getLogs = async (req, res) => {
     console.log('📊 Query final:', query);
     const [logs] = await pool.execute(query, params);
     console.log('📊 Logs encontrados:', logs.length);
+    
+    // Debug: mostrar os timestamps dos primeiros logs
+    if (logs.length > 0) {
+      console.log('📅 Log mais recente no DB:', logs[0].criado_em);
+      console.log('📅 Log mais antigo no DB (desta página):', logs[logs.length - 1].criado_em);
+      console.log('🕐 Hora atual do servidor:', new Date().toISOString());
+    }
 
     // Parse JSON detalhes com segurança
     const logsFormatados = logs.map(log => {
