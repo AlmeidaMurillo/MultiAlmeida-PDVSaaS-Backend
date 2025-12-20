@@ -7,19 +7,37 @@ class PlanosController {
   async create(req, res) {
     try {
       let { nome, periodo, preco, duracaoDias, beneficios } = req.body;
-      preco = formatPreco(preco); 
+      
+      // SEGURANÇA: Validar todos os campos no backend
+      if (!nome || typeof nome !== 'string' || nome.trim().length < 2) {
+        return res.status(400).json({ error: "Nome do plano inválido" });
+      }
+      
+      if (!periodo || !['mensal', 'trimestral', 'semestral', 'anual'].includes(periodo)) {
+        return res.status(400).json({ error: "Período inválido" });
+      }
+      
+      preco = formatPreco(preco);
+      const precoFloat = parseFloat(preco);
+      
+      // SEGURANÇA: Validar preço rigorosamente
+      if (isNaN(precoFloat) || precoFloat < 0 || precoFloat > 999999.99) {
+        return res.status(400).json({ 
+          error: "Preço inválido. Deve ser entre 0 e 999999.99" 
+        });
+      }
+      
+      // SEGURANÇA: Validar duração
+      const duracaoDiasInt = parseInt(duracaoDias);
+      if (isNaN(duracaoDiasInt) || duracaoDiasInt < 1 || duracaoDiasInt > 3650) {
+        return res.status(400).json({ 
+          error: "Duração inválida. Deve ser entre 1 e 3650 dias" 
+        });
+      }
 
-      if (
-        !nome ||
-        !periodo ||
-        !preco ||
-        !duracaoDias ||
-        !beneficios ||
-        beneficios.length === 0
-      ) {
-        console.error("Validação falhou para POST /api/admin/planos:", req.body);
-        return res.status(400).json({
-          error: "Nome, período, preço, duração e benefícios são obrigatórios",
+      if (!beneficios || !Array.isArray(beneficios) || beneficios.length === 0) {
+        return res.status(400).json({ 
+          error: "Benefícios são obrigatórios e devem ser um array" 
         });
       }
 
@@ -120,7 +138,39 @@ class PlanosController {
     try {
       const { id } = req.params;
       let { nome, periodo, preco, duracaoDias, beneficios } = req.body;
+      
+      // SEGURANÇA: Validar todos os campos no backend
+      if (!nome || typeof nome !== 'string' || nome.trim().length < 2) {
+        return res.status(400).json({ error: "Nome do plano inválido" });
+      }
+      
+      if (!periodo || !['mensal', 'trimestral', 'semestral', 'anual'].includes(periodo)) {
+        return res.status(400).json({ error: "Período inválido" });
+      }
+      
       preco = formatPreco(preco);
+      const precoFloat = parseFloat(preco);
+      
+      // SEGURANÇA: Validar preço rigorosamente
+      if (isNaN(precoFloat) || precoFloat < 0 || precoFloat > 999999.99) {
+        return res.status(400).json({ 
+          error: "Preço inválido. Deve ser entre 0 e 999999.99" 
+        });
+      }
+      
+      // SEGURANÇA: Validar duração
+      const duracaoDiasInt = parseInt(duracaoDias);
+      if (isNaN(duracaoDiasInt) || duracaoDiasInt < 1 || duracaoDiasInt > 3650) {
+        return res.status(400).json({ 
+          error: "Duração inválida. Deve ser entre 1 e 3650 dias" 
+        });
+      }
+
+      if (!beneficios || !Array.isArray(beneficios) || beneficios.length === 0) {
+        return res.status(400).json({ 
+          error: "Benefícios são obrigatórios e devem ser um array" 
+        });
+      }
 
       // Buscar dados antigos
       const [planosAntigos] = await pool.execute('SELECT * FROM planos WHERE id = ?', [id]);

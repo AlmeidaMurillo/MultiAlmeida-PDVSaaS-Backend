@@ -528,6 +528,7 @@ class PaymentController {
 
       const { plano_id: planId, periodo, cupom_codigo, cupom_desconto } = cartItems[0];
 
+      // SEGURANÇA: Validar período rigorosamente no backend
       if (!periodo || (periodo !== 'mensal' && periodo !== 'anual')) {
         console.error('❌ Período inválido:', periodo);
         await connection.rollback();
@@ -536,6 +537,8 @@ class PaymentController {
         });
       }
 
+      // SEGURANÇA CRÍTICA: SEMPRE buscar preço do banco de dados
+      // NUNCA confiar em preço enviado pelo frontend
       const [planRows] = await connection.execute(
         "SELECT * FROM planos WHERE id = ? AND periodo = ?",
         [planId, periodo]
@@ -551,10 +554,12 @@ class PaymentController {
 
       const plano = planRows[0];
 
+      // SEGURANÇA CRÍTICA: Usar apenas o preço do banco de dados
+      // NUNCA aceitar preço do frontend - frontend pode ser manipulado
       let preco = parseFloat(plano.preco.toString().replace(",", "."));
       
       if (isNaN(preco) || preco <= 0) {
-        console.error('❌ Preço inválido:', { precoOriginal: plano.preco, precoConvertido: preco });
+        console.error('❌ Preço inválido no banco:', { precoOriginal: plano.preco, precoConvertido: preco });
         await connection.rollback();
         return res.status(400).json({ 
           message: "Preço do plano inválido. Entre em contato com o suporte." 
@@ -563,10 +568,12 @@ class PaymentController {
       
       const precoOriginal = preco;
       let cupomId = null;
-      let valorDesconto = cupom_desconto ? parseFloat(cupom_desconto) : 0;
+      let valorDesconto = 0; // SEGURANÇA: Começar com 0, recalcular do banco
       let cupomInfo = null;
 
-      if (cupom_codigo && valorDesconto > 0) {
+      // SEGURANÇA CRÍTICA: Se tem cupom, buscar do banco e RECALCULAR desconto
+      // NUNCA confiar no valor de desconto enviado pelo frontend
+      if (cupom_codigo) {
         const [cupons] = await connection.execute(
           'SELECT * FROM cupons WHERE codigo = ?',
           [cupom_codigo]
@@ -574,7 +581,48 @@ class PaymentController {
 
         if (cupons.length > 0) {
           const cupom = cupons[0];
+          
+          // Validar se cupom está válido (ativo, dentro do período, quantidade)
+          const agora = new Date();
+          const dataInicio = new Date(cupom.data_inicio);
+          const dataFim = new Date(cupom.data_fim);
+          
+          if (!cupom.ativo) {
+            console.warn('⚠️ Cupom inativo:', cupom_codigo);
+            await connection.rollback();
+            return res.status(400).json({ message: 'Cupom inativo' });
+          }
+          
+          if (agora < dataInicio) {
+            console.warn('⚠️ Cupom ainda não disponível:', cupom_codigo);
+            await connection.rollback();
+            return res.status(400).json({ message: 'Cupom ainda não disponível' });
+          }
+          
+          if (agora > dataFim) {
+            console.warn('⚠️ Cupom expirado:', cupom_codigo);
+            await connection.rollback();
+            return res.status(400).json({ message: 'Cupom expirado' });
+          }
+          
+          if (cupom.quantidade_maxima !== null && cupom.quantidade_usada >= cupom.quantidade_maxima) {
+            console.warn('⚠️ Cupom esgotado:', cupom_codigo);
+            await connection.rollback();
+            return res.status(400).json({ message: 'Cupom esgotado' });
+          }
+          
           cupomId = cupom.id;
+          
+          // SEGURANÇA: Calcular desconto baseado no tipo e valor do banco
+          if (cupom.tipo === 'percentual') {
+            valorDesconto = (preco * parseFloat(cupom.valor)) / 100;
+          } else {
+            // Desconto fixo não pode ser maior que o preço
+            valorDesconto = Math.min(parseFloat(cupom.valor), preco);
+          }
+          
+          // Garantir que desconto seja válido e não maior que o preço
+          valorDesconto = Math.min(Math.max(0, valorDesconto), preco);
           
           preco = Math.max(0, preco - valorDesconto);
           
@@ -586,6 +634,8 @@ class PaymentController {
           };
         } else {
           console.warn('⚠️ Cupom não encontrado:', cupom_codigo);
+          await connection.rollback();
+          return res.status(404).json({ message: 'Cupom não encontrado' });
         }
       }
 

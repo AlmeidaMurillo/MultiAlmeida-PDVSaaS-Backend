@@ -75,6 +75,15 @@ class CarrinhoController {
           });
         }
 
+        // SEGURANÇA: Validar quantidade no backend - NÃO CONFIAR NO FRONTEND
+        const quantidadeInt = parseInt(quantidade);
+        if (isNaN(quantidadeInt) || quantidadeInt < 1 || quantidadeInt > 100) {
+          await connection.rollback();
+          return res.status(400).json({ 
+            error: "Quantidade inválida. Deve ser entre 1 e 100" 
+          });
+        }
+
         
         const [planos] = await connection.execute(
           "SELECT id FROM planos WHERE id = ? AND periodo = ?",
@@ -102,7 +111,7 @@ class CarrinhoController {
         const id = uuidv4();
         await connection.execute(
           "INSERT INTO carrinho_usuarios (id, usuario_id, plano_id, periodo, quantidade) VALUES (?, ?, ?, ?, ?)",
-          [id, usuarioId, planoId, periodo, quantidade]
+          [id, usuarioId, planoId, periodo, quantidadeInt]
         );
 
         await connection.commit();
@@ -236,13 +245,17 @@ class CarrinhoController {
       const { id } = req.params;
       const { quantidade } = req.body;
 
-      if (quantidade <= 0) {
-        return res.status(400).json({ error: "Quantidade deve ser maior que zero" });
+      // SEGURANÇA: Validar quantidade rigorosamente no backend
+      const quantidadeInt = parseInt(quantidade);
+      if (isNaN(quantidadeInt) || quantidadeInt < 1 || quantidadeInt > 100) {
+        return res.status(400).json({ 
+          error: "Quantidade inválida. Deve ser entre 1 e 100" 
+        });
       }
 
       const [result] = await pool.execute(
         "UPDATE carrinho_usuarios SET quantidade = ?, atualizado_em = CURRENT_TIMESTAMP WHERE id = ? AND usuario_id = ?",
-        [quantidade, id, usuarioId]
+        [quantidadeInt, id, usuarioId]
       );
 
       if (result.affectedRows === 0) {
@@ -357,14 +370,22 @@ class CarrinhoController {
         return res.status(400).json({ error: 'Cupom esgotado' });
       }
 
+      // SEGURANÇA CRÍTICA: Calcular desconto no backend baseado no preço do banco
       let desconto = 0;
       if (cupom.tipo === 'percentual') {
         desconto = (valorTotal * parseFloat(cupom.valor)) / 100;
       } else {
-        desconto = parseFloat(cupom.valor);
+        // Desconto fixo não pode ser maior que o valor total
+        desconto = Math.min(parseFloat(cupom.valor), valorTotal);
       }
 
+      // Garantir que desconto não seja maior que o valor total
       desconto = Math.min(desconto, valorTotal);
+      
+      // Garantir que desconto seja válido
+      if (isNaN(desconto) || desconto < 0) {
+        return res.status(500).json({ error: 'Erro ao calcular desconto' });
+      }
 
       for (const item of cartItems) {
         await pool.execute(
