@@ -17,8 +17,6 @@ export const getLogs = async (req, res) => {
       severidade,
     } = req.query;
 
-    console.log('🔍 Filtros recebidos:', { tipo, usuario_id, email, nome, cargo, ip, data_inicio, data_fim, limite, pagina, severidade });
-
     // Mapeamento de severidade para tipos de log
     const SEVERIDADE_TIPOS = {
       info: ['login', 'logout', 'sessao', 'acesso', 'carrinho_adicionar', 'carrinho_remover', 'carrinho_limpar', 'cupom_removido', 'admin', 'admin_cupom', 'admin_plano', 'admin_empresa', 'admin_usuario'],
@@ -55,13 +53,11 @@ export const getLogs = async (req, res) => {
     if (email) {
       query += ' AND email LIKE ?';
       params.push(`%${email}%`);
-      console.log('📧 Filtrando por email:', email);
     }
 
     if (nome) {
       query += ' AND nome LIKE ?';
       params.push(`%${nome}%`);
-      console.log('👤 Filtrando por nome:', nome);
     }
 
     if (cargo) {
@@ -77,37 +73,23 @@ export const getLogs = async (req, res) => {
     if (data_inicio) {
       query += ' AND criado_em >= ?';
       params.push(data_inicio);
-      console.log('📅 Filtrando data_inicio:', data_inicio);
     }
 
     if (data_fim) {
       query += ' AND criado_em <= ?';
       params.push(data_fim);
-      console.log('📅 Filtrando data_fim:', data_fim);
     }
 
     // Contar total
     const countQuery = query.replace('SELECT *', 'SELECT COUNT(*) as total');
-    console.log('📊 Query COUNT:', countQuery);
-    console.log('📊 Params:', params);
     const [countResult] = await pool.execute(countQuery, params);
     const total = countResult[0]?.total || 0;
-    console.log('📊 Total encontrado:', total);
 
     // Paginação - usar interpolação direta ao invés de placeholders para LIMIT/OFFSET
     const offset = (paginaNum - 1) * limiteNum;
     query += ` ORDER BY criado_em DESC LIMIT ${limiteNum} OFFSET ${offset}`;
 
-    console.log('📊 Query final:', query);
     const [logs] = await pool.execute(query, params);
-    console.log('📊 Logs encontrados:', logs.length);
-    
-    // Debug: mostrar os timestamps dos primeiros logs
-    if (logs.length > 0) {
-      console.log('📅 Log mais recente no DB:', logs[0].criado_em);
-      console.log('📅 Log mais antigo no DB (desta página):', logs[logs.length - 1].criado_em);
-      console.log('🕐 Hora atual do servidor:', new Date().toISOString());
-    }
 
     // Parse JSON detalhes com segurança
     const logsFormatados = logs.map(log => {

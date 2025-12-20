@@ -18,12 +18,12 @@ export async function authMiddleware(req, res, next) {
   }
 
   if (!token) {
-    await log('token_invalido', { ip: req.ip, headers: req.headers }, 'Acesso sem token', { path: req.path });
+    await log('acesso_negado', { ip: req.ip, headers: req.headers }, 'Tentativa de acesso sem token', { path: req.path, method: req.method });
     return res.status(401).json({ error: "Token de acesso não fornecido." });
   }
 
   if (token.split('.').length !== 3) {
-    await log('token_invalido', { ip: req.ip }, 'Token malformado', { path: req.path });
+    await log('ataque_detectado', { ip: req.ip }, 'Token malformado detectado', { path: req.path, tokenPreview: token.substring(0, 20) });
     return res.status(401).json({ error: "Token malformado." });
   }
 
@@ -76,12 +76,24 @@ export async function authMiddleware(req, res, next) {
   }
 }
 
-export function requireAdmin(req, res, next) {
+export async function requireAdmin(req, res, next) {
   if (!req.user) {
     return res.status(401).json({ error: "Usuário não autenticado" });
   }
   if (req.user.papel !== "admin") {
-    log('tentativa_acesso', req, 'Tentativa de acesso a área admin sem permissão', { papel: req.user.papel });
+    await log('acesso_negado', req, 'Tentativa de acesso à área administrativa sem permissão', { 
+      papel: req.user.papel,
+      usuarioId: req.user.id,
+      email: req.user.email,
+      path: req.path,
+      method: req.method,
+      userAgent: req.get('user-agent')
+    });
+    return res.status(403).json({ error: "Acesso negado" });
+  }
+  return next();
+}
+    });
     return res.status(403).json({ error: "Acesso negado" });
   }
   return next();

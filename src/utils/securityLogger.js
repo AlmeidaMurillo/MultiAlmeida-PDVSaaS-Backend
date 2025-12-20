@@ -24,9 +24,20 @@ export const SecurityEvent = {
   PERMISSION_DENIED: 'PERMISSION_DENIED'
 };
 
-// Função desabilitada - não cria arquivos .log
-export const logSecurityEvent = (level, event, details = {}) => {
-  // Não faz nada - logs são salvos apenas no banco de dados via logger.js
+// Importar o sistema de logs centralizado
+import { log } from './logger.js';
+
+// Função para registrar eventos de segurança no banco de dados
+export const logSecurityEvent = async (level, event, details = {}) => {
+  try {
+    await log('ataque_detectado', null, `${level}: ${event}`, {
+      level,
+      event,
+      ...details
+    });
+  } catch (error) {
+    console.error('Erro ao registrar evento de segurança:', error);
+  }
 };
 
 // Middleware desabilitado - não cria logs duplicados
@@ -34,11 +45,34 @@ export const securityLoggerMiddleware = (req, res, next) => {
   next();
 };
 
-// Funções desabilitadas - logs salvos apenas no banco via logger.js
-export const logLoginAttempt = (success, email, ip, userAgent, userId = null) => {};
-export const logPasswordChange = (userId, ip) => {};
-export const logSqlInjectionAttempt = (input, ip, path) => {};
-export const logXssAttempt = (input, ip, path) => {};
+// Funções para registrar tentativas de ataque
+export const logLoginAttempt = async (success, email, ip, userAgent, userId = null) => {
+  await logSecurityEvent(
+    success ? SecurityLevel.INFO : SecurityLevel.WARNING,
+    success ? SecurityEvent.LOGIN_SUCCESS : SecurityEvent.LOGIN_FAILED,
+    { email, ip, userAgent, userId }
+  );
+};
+
+export const logPasswordChange = async (userId, ip) => {
+  await logSecurityEvent(SecurityLevel.INFO, SecurityEvent.PASSWORD_CHANGE, { userId, ip });
+};
+
+export const logSqlInjectionAttempt = async (input, ip, path) => {
+  await logSecurityEvent(SecurityLevel.ATTACK, SecurityEvent.SQL_INJECTION_ATTEMPT, {
+    input: input.substring(0, 100),
+    ip,
+    path
+  });
+};
+
+export const logXssAttempt = async (input, ip, path) => {
+  await logSecurityEvent(SecurityLevel.ATTACK, SecurityEvent.XSS_ATTEMPT, {
+    input: input.substring(0, 100),
+    ip,
+    path
+  });
+};
 
 export const detectSuspiciousPatterns = (str) => {
   if (typeof str !== 'string') return null;
